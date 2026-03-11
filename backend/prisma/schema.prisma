@@ -1,0 +1,106 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// 1. USUÁRIOS E RBAC
+// ---------------------------------------------------------------------------
+enum Role {
+  QUANTIFIER
+  MANAGER
+  AUDITOR
+  ADMIN
+}
+
+model User {
+  id             String    @id @default(uuid())
+  email          String    @unique
+  passwordHash   String    // Preparado para desacoplar no LDAP depois
+  role           Role      @default(QUANTIFIER)
+}
+
+// ---------------------------------------------------------------------------
+// 2. FÓRMULAS
+// ---------------------------------------------------------------------------
+model Formula {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  expression  String   // Ex: "area * consumo_por_m2 * fator_perda"
+  isActive    Boolean  @default(true)
+  items       RequisitionItem[]
+}
+
+// ---------------------------------------------------------------------------
+// 3. PROJETO E CABEÇALHO DA REQUISIÇÃO (SNAPSHOTS)
+// ---------------------------------------------------------------------------
+enum ReqStatus {
+  PENDING       // Nova versão criada, aguardando início
+  FILLING       // Sendo preenchida pelo Quantificador
+  COMPLETED     // Fechada. Se houver edição, gera nova versão.
+}
+
+model Project {
+  id           String        @id @default(uuid())
+  name         String
+  requisitions Requisition[]
+}
+
+model Requisition {
+  id            String    @id @default(uuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id])
+  
+  version       Int       @default(1)    // V.1, V.2...
+  status        ReqStatus @default(PENDING)
+  isReadOnly    Boolean   @default(false) // Trava para versões antigas
+  
+  items         RequisitionItem[]
+
+  // Concorrência Otimista do Cabeçalho
+  versionLock   Int       @default(1) 
+
+  @@unique([projectId, version]) // Garante que não haja versões duplicadas pro mesmo projeto
+}
+
+// ---------------------------------------------------------------------------
+// 4. ITENS DA REQUISIÇÃO (LINE ITEMS)
+// ---------------------------------------------------------------------------
+enum ItemStatus {
+  PENDING
+  RECEIVED
+}
+
+model RequisitionItem {
+  id               String       @id @default(uuid())
+  requisitionId    String
+  requisition      Requisition  @relation(fields: [requisitionId], references: [id])
+  
+  equipmentName    String
+  
+  // --- MOTOR DE REGRAS E OVERRIDE ---
+  formulaId        String?
+  formula          Formula?     @relation(fields: [formulaId], references: [id])
+  variablesPayload Json?        // Snapshot dos inputs do usuário (ex: {"area": 500, "perda": 1.05})
+  
+  calculatedValue  Float?       // Resultado gerado pelo backend (sandboxed)
+  overrideValue    Float?       // Inserido pelo ADMIN (se existir, sobrepõe o de cima no Front/Excel)
+  
+  // --- MÁQUINA DE ESTADOS DO RECEBIMENTO ---
+  status           ItemStatus   @default(PENDING)
+  receivedAt       DateTime?
+  receivedById     String?      // Relaciona ao gerente que recebeu
+  observation      String?      // Sem @db.Text pois postgres aceita apenas String para Text ilimitado
+  
+  // Concorrência Otimista na granularidade do item
+  versionLock      Int          @default(1)
+
+  @@index([requisitionId])
+}

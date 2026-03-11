@@ -1,0 +1,50 @@
+# Variaveis de ambiente
+.env
+.env.*
+!.env.example
+
+# Dependencias Node.js
+**/node_modules/
+npm-debug.log
+yarn-error.log
+pnpm-debug.log*
+
+# Compilados / Build outputs
+**/dist/
+**/build/
+**/out/
+
+# Dados locais do Docker (volumes mapeados) / Backups
+pg_data/
+redis_data/
+db_backups/
+
+# Prisma
+**/prisma/*sqlite
+**/prisma/*sqlite-journal
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Sistema Operacional
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs / Editores
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

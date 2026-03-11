@@ -1,0 +1,116 @@
+services:
+  # ---------------------------------------------------------
+  # CAMADA DE DADOS E CACHE/FILA
+  # ---------------------------------------------------------
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: quant_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-sigp}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  redis-queue:
+    image: redis:7-alpine
+    container_name: quant_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------
+  # BACKUP AUTOMATIZADO (SIDECAR DO BANCO)
+  # ---------------------------------------------------------
+  db-backup:
+    image: prodrigestivill/postgres-backup-local
+    container_name: quant_db_backup
+    restart: unless-stopped
+    depends_on:
+      - postgres-db
+    environment:
+      POSTGRES_HOST: postgres-db
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-sigp}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+    volumes:
+      - db_backups:/backups
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------
+  # CAMADA DE APLICAÇÃO (BACKEND & WORKERS)
+  # ---------------------------------------------------------
+  api-server:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quant_api
+    restart: unless-stopped
+    depends_on:
+      - postgres-db
+      - redis-queue
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-db:5432/${DB_NAME:-sigp}
+      - REDIS_HOST=redis-queue
+      - REDIS_PORT=6379
+      - NODE_ENV=production
+    ports:
+      - "3000:3000"
+    command: npm run start:prod
+    networks:
+      - app-network
+
+  queue-worker:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quant_worker
+    restart: unless-stopped
+    depends_on:
+      - postgres-db
+      - redis-queue
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-db:5432/${DB_NAME:-sigp}
+      - REDIS_HOST=redis-queue
+      - REDIS_PORT=6379
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - NODE_ENV=production
+    command: npm run start:worker 
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------
+  # CAMADA DE APRESENTAÇÃO (FRONTEND)
+  # ---------------------------------------------------------
+  web-frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: quant_frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - api-server
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  pg_data:
+  redis_data:
+  db_backups:
