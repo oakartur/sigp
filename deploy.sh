@@ -35,8 +35,9 @@ docker image prune -f
 
 echo ""
 echo "✅ Deploy concluído com sucesso!"
-echo "➡️  Frontend disponível na porta 8080"
-echo "➡️  API disponível na porta 3000"
+echo "➡️  Acesse o Frontend (via Nginx Proxy): http://<IP_DA_VM>:1180/sigp/"
+echo "➡️  Acesse a API (via Nginx Proxy): http://<IP_DA_VM>:1180/sigp-api/"
+echo "⚠️  As portas originais 8080 e 3000 provavelmente estão bloqueadas pelo firewall da rede."
 echo ""
 echo "📋 Status dos containers:"
 docker compose ps

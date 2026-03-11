@@ -1,0 +1,1 @@
+src/pages/Dashboard.tsx(21,18): error TS2307: Cannot find module '@mui/material/Grid2' or its corresponding type declarations.

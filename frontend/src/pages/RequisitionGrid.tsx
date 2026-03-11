@@ -1,14 +1,20 @@
 import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { DataGrid } from '@mui/x-data-grid';
 import type { GridColDef, GridRenderCellParams, GridRowModel } from '@mui/x-data-grid';
-import { Box, Typography, Button, Paper, Chip } from '@mui/material';
+import { Box, Typography, Button, Paper, Chip, IconButton } from '@mui/material';
+import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
 import { api } from '../context/AuthContext';
 
-export default function RequisitionGrid({ reqId }: { reqId: string }) {
+export default function RequisitionGrid() {
+  const { reqId } = useParams();
+  const navigate = useNavigate();
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Busca a requisição para poder voltar ao projeto
+    // E depois os itens
     api.get(`/requisitions/${reqId}/items`)
       .then(res => { setRows(res.data); setLoading(false); })
       .catch(() => setLoading(false));
@@ -53,11 +59,17 @@ export default function RequisitionGrid({ reqId }: { reqId: string }) {
   };
 
   return (
-    <Paper sx={{ height: 600, width: '100%', p: 2, bgcolor: 'background.paper' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-        <Typography variant="h5" color="primary" fontWeight={700}>
-          Edição em Massa - Requisição {reqId}
-        </Typography>
+    <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: 'background.default', p: { xs: 1, md: 3 } }}>
+      <Paper sx={{ height: 600, width: '100%', p: 2, bgcolor: 'background.paper', borderRadius: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <IconButton edge="start" onClick={() => navigate(-1)} sx={{ mr: 2 }}>
+              <ArrowBackIcon />
+            </IconButton>
+            <Typography variant="h5" color="primary" fontWeight={700}>
+              Edição em Massa - Requisição {reqId?.substring(0, 8)}...
+            </Typography>
+          </Box>
         <Button
           variant="contained"
           color="secondary"
@@ -80,6 +92,7 @@ export default function RequisitionGrid({ reqId }: { reqId: string }) {
           },
         }}
       />
-    </Paper>
+      </Paper>
+    </Box>
   );
 }

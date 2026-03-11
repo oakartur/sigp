@@ -1,6 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { CssBaseline, ThemeProvider, createTheme } from '@mui/material';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import ProjectRequisitions from './pages/ProjectRequisitions';
+import RequisitionGrid from './pages/RequisitionGrid';
+import PrivateRoute from './components/PrivateRoute';
 
 // Paleta de Cores Premium Elegante Requisitada nas Instruções Mestre
 const theme = createTheme({
@@ -27,11 +32,37 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
-        <BrowserRouter>
+        <BrowserRouter basename="/sigp">
           <Routes>
-            <Route path="/login" element={<div>Login Page...</div>} />
-            <Route path="/" element={<div>Dashboard Base...</div>} />
-            {/* O Grid das Requisitções entrará aqui */}
+            <Route path="/login" element={<Login />} />
+            
+            <Route 
+              path="/" 
+              element={
+                <PrivateRoute>
+                  <Dashboard />
+                </PrivateRoute>
+              } 
+            />
+
+            <Route 
+              path="/project/:projectId" 
+              element={
+                <PrivateRoute>
+                  <ProjectRequisitions />
+                </PrivateRoute>
+              } 
+            />
+
+            <Route 
+              path="/requisition/:reqId" 
+              element={
+                <PrivateRoute>
+                  <RequisitionGrid />
+                </PrivateRoute>
+              } 
+            />
+            
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </BrowserRouter>
