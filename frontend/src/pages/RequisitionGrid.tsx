@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { DataGrid, GridColDef, GridRenderCellParams, GridRowModel } from '@mui/x-data-grid';
+import { DataGrid } from '@mui/x-data-grid';
+import type { GridColDef, GridRenderCellParams, GridRowModel } from '@mui/x-data-grid';
 import { Box, Typography, Button, Paper, Chip } from '@mui/material';
 import { api } from '../context/AuthContext';
 
@@ -8,9 +9,9 @@ export default function RequisitionGrid({ reqId }: { reqId: string }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Busca dados no backend
-    // api.get(`/requisitions/${reqId}`).then(res => { setRows(res.data.items); setLoading(false); });
-    setLoading(false);
+    api.get(`/requisitions/${reqId}/items`)
+      .then(res => { setRows(res.data); setLoading(false); })
+      .catch(() => setLoading(false));
   }, [reqId]);
 
   const columns: GridColDef[] = [
@@ -42,8 +43,10 @@ export default function RequisitionGrid({ reqId }: { reqId: string }) {
 
   const processRowUpdate = async (newRow: GridRowModel, oldRow: GridRowModel) => {
     if (newRow.overrideValue !== oldRow.overrideValue) {
-      // Optimistic Update UI
-      // await api.put(`/requisitions/items/${newRow.id}/override`, { overrideValue: newRow.overrideValue, currentLock: newRow.versionLock });
+      await api.put(`/requisitions/items/${newRow.id}/override`, {
+        overrideValue: newRow.overrideValue,
+        currentLock: newRow.versionLock,
+      });
       return newRow;
     }
     return oldRow;
@@ -55,7 +58,11 @@ export default function RequisitionGrid({ reqId }: { reqId: string }) {
         <Typography variant="h5" color="primary" fontWeight={700}>
           Edição em Massa - Requisição {reqId}
         </Typography>
-        <Button variant="contained" color="secondary" onClick={() => {/* api.post(`/tasks/excel/${reqId}`) */}}>
+        <Button
+          variant="contained"
+          color="secondary"
+          onClick={() => api.post(`/tasks/excel/${reqId}`)}
+        >
           Gerar Export Nimbi
         </Button>
       </Box>
@@ -64,7 +71,6 @@ export default function RequisitionGrid({ reqId }: { reqId: string }) {
         columns={columns}
         loading={loading}
         processRowUpdate={processRowUpdate}
-        experimentalFeatures={{ newEditingApi: true }} // Requisito DataGrid Avançado
         sx={{
           boxShadow: 2,
           border: 2,
