@@ -23,55 +23,55 @@ import { CatalogService } from './catalog.service';
 export class CatalogController {
   constructor(private readonly catalogService: CatalogService) {}
 
-  @Roles(Role.QUANTIFIER, Role.MANAGER, Role.AUDITOR, Role.ADMIN)
+  @Roles(Role.ADMIN)
   @Get('tree')
   getTree() {
     return this.catalogService.getTree();
   }
 
-  @Roles(Role.QUANTIFIER, Role.MANAGER, Role.AUDITOR, Role.ADMIN)
+  @Roles(Role.ADMIN)
   @Get('locals')
   findLocals() {
     return this.catalogService.findLocals();
   }
 
-  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Roles(Role.ADMIN)
   @Post('locals')
   createLocal(@Body() body: { name: string }) {
     return this.catalogService.createLocal(body);
   }
 
-  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Roles(Role.ADMIN)
   @Put('locals/:id')
   updateLocal(@Param('id') id: string, @Body() body: { name?: string; isActive?: boolean }) {
     return this.catalogService.updateLocal(id, body);
   }
 
-  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Roles(Role.ADMIN)
   @Delete('locals/:id')
   removeLocal(@Param('id') id: string) {
     return this.catalogService.removeLocal(id);
   }
 
-  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Roles(Role.ADMIN)
   @Post('operations')
   createOperation(@Body() body: { localId: string; name: string }) {
     return this.catalogService.createOperation(body);
   }
 
-  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Roles(Role.ADMIN)
   @Put('operations/:id')
   updateOperation(@Param('id') id: string, @Body() body: { name?: string; isActive?: boolean }) {
     return this.catalogService.updateOperation(id, body);
   }
 
-  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Roles(Role.ADMIN)
   @Delete('operations/:id')
   removeOperation(@Param('id') id: string) {
     return this.catalogService.removeOperation(id);
   }
 
-  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Roles(Role.ADMIN)
   @Post('equipments')
   createEquipment(
     @Body()
@@ -82,12 +82,13 @@ export class CatalogController {
       baseQuantity?: number;
       autoConfigFieldId?: string | null;
       autoMultiplier?: number;
+      autoFormulaExpression?: string | null;
     },
   ) {
     return this.catalogService.createEquipment(body);
   }
 
-  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Roles(Role.ADMIN)
   @Put('equipments/:id')
   updateEquipment(
     @Param('id') id: string,
@@ -98,19 +99,20 @@ export class CatalogController {
       baseQuantity?: number;
       autoConfigFieldId?: string | null;
       autoMultiplier?: number;
+      autoFormulaExpression?: string | null;
       isActive?: boolean;
     },
   ) {
     return this.catalogService.updateEquipment(id, body);
   }
 
-  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Roles(Role.ADMIN)
   @Delete('equipments/:id')
   removeEquipment(@Param('id') id: string) {
     return this.catalogService.removeEquipment(id);
   }
 
-  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Roles(Role.ADMIN)
   @Post('import')
   @UseInterceptors(FileInterceptor('file'))
   importCatalog(@UploadedFile() file: any) {

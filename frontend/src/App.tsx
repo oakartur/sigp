@@ -167,7 +167,7 @@ function App() {
             <Route
               path="/settings/project"
               element={
-                <PrivateRoute>
+                <PrivateRoute allowedRoles={['ADMIN']}>
                   <ProjectHeaderConfig />
                 </PrivateRoute>
               }
@@ -176,7 +176,7 @@ function App() {
             <Route
               path="/settings/catalogs"
               element={
-                <PrivateRoute>
+                <PrivateRoute allowedRoles={['ADMIN']}>
                   <CatalogsConfig />
                 </PrivateRoute>
               }
@@ -185,7 +185,7 @@ function App() {
             <Route
               path="/settings/header-fields"
               element={
-                <PrivateRoute>
+                <PrivateRoute allowedRoles={['ADMIN']}>
                   <ProjectHeaderConfig />
                 </PrivateRoute>
               }

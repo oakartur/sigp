@@ -1,47 +1,62 @@
-﻿import { useState, useEffect, useContext } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import type { AxiosError } from 'axios';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box,
-  Typography,
-  Container,
+  Alert,
   AppBar,
-  Toolbar,
-  IconButton,
+  Box,
   Button,
+  Chip,
+  CircularProgress,
+  Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  MenuItem,
   Paper,
+  Snackbar,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   TextField,
-  CircularProgress,
+  Toolbar,
   Tooltip,
-  Snackbar,
-  Alert
+  Typography,
 } from '@mui/material';
 import {
-  ArrowBack as ArrowBackIcon,
   Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  ArrowUpward as ArrowUpIcon,
+  ArrowBack as ArrowBackIcon,
   ArrowDownward as ArrowDownIcon,
+  ArrowUpward as ArrowUpIcon,
+  Delete as DeleteIcon,
+  Edit as EditIcon,
 } from '@mui/icons-material';
 import { AuthContext, api } from '../context/AuthContext';
+
+type HeaderFieldType = 'TEXT' | 'NUMBER' | 'SELECT' | 'COMPUTED';
 
 interface HeaderField {
   id: string;
   label: string;
+  type: HeaderFieldType;
+  options?: string[] | null;
+  defaultValue?: string | null;
+  formulaExpression?: string | null;
   sortOrder: number;
   isActive: boolean;
 }
+
+const TYPE_LABEL: Record<HeaderFieldType, string> = {
+  TEXT: 'Texto',
+  NUMBER: 'Numero',
+  SELECT: 'Lista',
+  COMPUTED: 'Calculado',
+};
 
 export default function ProjectHeaderConfig() {
   const { user } = useContext(AuthContext);
@@ -50,24 +65,28 @@ export default function ProjectHeaderConfig() {
   const [fields, setFields] = useState<HeaderField[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
   const [editingField, setEditingField] = useState<HeaderField | null>(null);
+
   const [fieldLabel, setFieldLabel] = useState('');
+  const [fieldType, setFieldType] = useState<HeaderFieldType>('TEXT');
+  const [fieldOptionsText, setFieldOptionsText] = useState('');
+  const [defaultValue, setDefaultValue] = useState('');
+  const [formulaExpression, setFormulaExpression] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Delete confirmation
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingField, setDeletingField] = useState<HeaderField | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Snackbar
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
     message: '',
     severity: 'success',
   });
+
+  const isAdmin = user?.role === 'ADMIN';
 
   useEffect(() => {
     fetchFields();
@@ -76,15 +95,15 @@ export default function ProjectHeaderConfig() {
   const fetchFields = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/project-header-fields');
-      setFields(res.data);
-    } catch (err) {
-      console.error('Failed to fetch header fields', err);
-      const apiError = err as AxiosError<{ message?: string | string[] }>;
+      const response = await api.get('/project-header-fields');
+      setFields(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch header fields', error);
+      const apiError = error as AxiosError<{ message?: string | string[] }>;
       const backendMessage = apiError.response?.data?.message;
       const errorMessage = Array.isArray(backendMessage)
         ? backendMessage.join(' ')
-        : backendMessage || 'Erro ao carregar campos';
+        : backendMessage || 'Erro ao carregar configuracoes de projeto.';
       showSnackbar(errorMessage, 'error');
     } finally {
       setLoading(false);
@@ -95,49 +114,82 @@ export default function ProjectHeaderConfig() {
     setSnackbar({ open: true, message, severity });
   };
 
-  // --- CREATE / EDIT ---
+  const optionsPreview = useMemo(() => {
+    return fieldOptionsText
+      .split(/\r?\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }, [fieldOptionsText]);
+
+  const resetDialogFields = () => {
+    setFieldLabel('');
+    setFieldType('TEXT');
+    setFieldOptionsText('');
+    setDefaultValue('');
+    setFormulaExpression('');
+  };
+
   const openCreateDialog = () => {
     setDialogMode('create');
     setEditingField(null);
-    setFieldLabel('');
+    resetDialogFields();
     setDialogOpen(true);
   };
 
   const openEditDialog = (field: HeaderField) => {
     setDialogMode('edit');
     setEditingField(field);
+
     setFieldLabel(field.label);
+    setFieldType(field.type || 'TEXT');
+    setFieldOptionsText(Array.isArray(field.options) ? field.options.join('\n') : '');
+    setDefaultValue(field.defaultValue || '');
+    setFormulaExpression(field.formulaExpression || '');
+
     setDialogOpen(true);
+  };
+
+  const buildPayload = () => {
+    return {
+      label: fieldLabel.trim(),
+      type: fieldType,
+      options: fieldType === 'SELECT' ? optionsPreview : [],
+      defaultValue: fieldType === 'COMPUTED' ? null : defaultValue.trim() || null,
+      formulaExpression: fieldType === 'COMPUTED' ? formulaExpression.trim() || null : null,
+    };
   };
 
   const handleSave = async () => {
     if (!fieldLabel.trim()) return;
+
     try {
       setSaving(true);
+      const payload = buildPayload();
+
       if (dialogMode === 'create') {
-        await api.post('/project-header-fields', { label: fieldLabel.trim() });
-        showSnackbar('Campo criado com sucesso!', 'success');
+        await api.post('/project-header-fields', payload);
+        showSnackbar('Campo de configuracao criado.', 'success');
       } else if (editingField) {
-        await api.put(`/project-header-fields/${editingField.id}`, { label: fieldLabel.trim() });
-        showSnackbar('Campo atualizado com sucesso!', 'success');
+        await api.put(`/project-header-fields/${editingField.id}`, payload);
+        showSnackbar('Campo atualizado.', 'success');
       }
+
       setDialogOpen(false);
-      setFieldLabel('');
-      fetchFields();
-    } catch (err) {
-      console.error('Failed to save field', err);
-      const apiError = err as AxiosError<{ message?: string | string[] }>;
+      resetDialogFields();
+      await fetchFields();
+    } catch (error) {
+      console.error('Failed to save field', error);
+      const apiError = error as AxiosError<{ message?: string | string[] }>;
       const backendMessage = apiError.response?.data?.message;
       const errorMessage = Array.isArray(backendMessage)
         ? backendMessage.join(' ')
-        : backendMessage || 'Erro ao salvar campo';
+        : backendMessage || 'Erro ao salvar campo.';
       showSnackbar(errorMessage, 'error');
     } finally {
       setSaving(false);
     }
   };
 
-  // --- DELETE ---
   const openDeleteDialog = (field: HeaderField) => {
     setDeletingField(field);
     setDeleteDialogOpen(true);
@@ -145,22 +197,34 @@ export default function ProjectHeaderConfig() {
 
   const handleDelete = async () => {
     if (!deletingField) return;
+
     try {
       setDeleting(true);
       await api.delete(`/project-header-fields/${deletingField.id}`);
-      showSnackbar('Campo excluÃ­do com sucesso!', 'success');
+      showSnackbar('Campo excluido.', 'success');
       setDeleteDialogOpen(false);
       setDeletingField(null);
-      fetchFields();
-    } catch (err) {
-      console.error('Failed to delete field', err);
-      showSnackbar('Erro ao excluir campo', 'error');
+      await fetchFields();
+    } catch (error) {
+      console.error('Failed to delete field', error);
+      showSnackbar('Erro ao excluir campo.', 'error');
     } finally {
       setDeleting(false);
     }
   };
 
-  // --- REORDER ---
+  const saveOrder = async (orderedFields: HeaderField[]) => {
+    try {
+      await api.put('/project-header-fields/reorder', {
+        orderedIds: orderedFields.map((field) => field.id),
+      });
+    } catch (error) {
+      console.error('Failed to reorder fields', error);
+      showSnackbar('Erro ao reordenar campos.', 'error');
+      fetchFields();
+    }
+  };
+
   const handleMoveUp = async (index: number) => {
     if (index === 0) return;
     const newFields = [...fields];
@@ -177,216 +241,242 @@ export default function ProjectHeaderConfig() {
     await saveOrder(newFields);
   };
 
-  const saveOrder = async (orderedFields: HeaderField[]) => {
-    try {
-      await api.put('/project-header-fields/reorder', {
-        orderedIds: orderedFields.map((f) => f.id),
-      });
-    } catch (err) {
-      console.error('Failed to reorder fields', err);
-      showSnackbar('Erro ao reordenar campos', 'error');
-      fetchFields(); // Reverte para o estado do servidor
-    }
-  };
-
-  const isAdmin = user?.role === 'ADMIN';
-
   return (
-    <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: 'background.default' }}>
-      <AppBar
-        position="static"
-        elevation={0}
-        sx={{ borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}
-      >
+    <Box sx={{ minHeight: '100vh' }}>
+      <AppBar position="sticky" elevation={0}>
         <Toolbar>
-          <IconButton edge="start" color="inherit" onClick={() => navigate('/')} sx={{ mr: 2 }}>
+          <IconButton edge="start" color="primary" onClick={() => navigate('/')} sx={{ mr: 1 }}>
             <ArrowBackIcon />
           </IconButton>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold', color: 'primary.main' }}>
-            Configurações de Projeto
-          </Typography>
-        </Toolbar>
-      </AppBar>
-
-      <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h5" fontWeight={700}>
-            Configurações de Projeto
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            Configuracoes de Projeto
           </Typography>
           {isAdmin && (
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreateDialog} sx={{ borderRadius: 2 }}>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreateDialog}>
               Novo Campo
             </Button>
           )}
-        </Box>
+        </Toolbar>
+      </AppBar>
 
+      <Container maxWidth="xl" sx={{ mt: 3, mb: 4 }}>
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 5 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
             <CircularProgress />
           </Box>
         ) : fields.length === 0 ? (
-          <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 2 }}>
-            <Typography color="text.secondary">
-              Nenhuma configuração cadastrada. Clique em "Novo Campo" para adicionar.
+          <Paper sx={{ p: 5, textAlign: 'center' }}>
+            <Typography variant="h6">Nenhuma configuracao cadastrada.</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Crie campos de projeto para liberar preenchimento nas requisicoes.
             </Typography>
           </Paper>
         ) : (
-          <TableContainer
-            component={Paper}
-            elevation={3}
-            sx={{
-              borderRadius: 2,
-              maxHeight: 'calc(100vh - 240px)',
-              overflow: 'auto',
-            }}
-          >
+          <TableContainer component={Paper}>
             <Table stickyHeader>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 'bold', width: 60 }}>#</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Nome do Campo</TableCell>
+                  <TableCell sx={{ width: 60 }}>#</TableCell>
+                  <TableCell>Campo</TableCell>
+                  <TableCell sx={{ width: 140 }}>Tipo</TableCell>
+                  <TableCell sx={{ width: 200 }}>Padrao / Opcoes</TableCell>
+                  <TableCell>Formula</TableCell>
                   {isAdmin && (
                     <>
-                      <TableCell align="center" sx={{ fontWeight: 'bold', width: 120 }}>
+                      <TableCell align="center" sx={{ width: 110 }}>
                         Ordem
                       </TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 'bold', width: 120 }}>
-                        AÃ§Ãµes
+                      <TableCell align="right" sx={{ width: 130 }}>
+                        Acoes
                       </TableCell>
                     </>
                   )}
                 </TableRow>
               </TableHead>
               <TableBody>
-                {fields.map((field, index) => (
-                  <TableRow
-                    key={field.id}
-                    sx={{
-                      '&:last-child td, &:last-child th': { border: 0 },
-                      transition: 'background-color 0.15s',
-                      '&:hover': { bgcolor: 'rgba(108, 99, 255, 0.08)' },
-                    }}
-                  >
-                    <TableCell>
-                      <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                        {index + 1}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body1">{field.label}</Typography>
-                    </TableCell>
-                    {isAdmin && (
-                      <>
-                        <TableCell align="center">
-                          <Tooltip title="Mover para cima">
-                            <span>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleMoveUp(index)}
-                                disabled={index === 0}
-                                color="primary"
-                              >
-                                <ArrowUpIcon fontSize="small" />
+                {fields.map((field, index) => {
+                  const options = Array.isArray(field.options) ? field.options : [];
+                  return (
+                    <TableRow key={field.id} hover>
+                      <TableCell>{index + 1}</TableCell>
+                      <TableCell>
+                        <Typography sx={{ fontWeight: 600 }}>{field.label}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip size="small" label={TYPE_LABEL[field.type] || field.type} variant="outlined" />
+                      </TableCell>
+                      <TableCell>
+                        {field.type === 'SELECT' ? (
+                          <Typography variant="body2" color="text.secondary">
+                            {options.length > 0 ? options.join(', ') : '-'}
+                          </Typography>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            {field.defaultValue || '-'}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {field.formulaExpression || '-'}
+                        </Typography>
+                      </TableCell>
+                      {isAdmin && (
+                        <>
+                          <TableCell align="center">
+                            <Tooltip title="Mover para cima">
+                              <span>
+                                <IconButton size="small" color="primary" onClick={() => handleMoveUp(index)} disabled={index === 0}>
+                                  <ArrowUpIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title="Mover para baixo">
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  color="primary"
+                                  onClick={() => handleMoveDown(index)}
+                                  disabled={index === fields.length - 1}
+                                >
+                                  <ArrowDownIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Tooltip title="Editar">
+                              <IconButton size="small" color="primary" onClick={() => openEditDialog(field)}>
+                                <EditIcon fontSize="small" />
                               </IconButton>
-                            </span>
-                          </Tooltip>
-                          <Tooltip title="Mover para baixo">
-                            <span>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleMoveDown(index)}
-                                disabled={index === fields.length - 1}
-                                color="primary"
-                              >
-                                <ArrowDownIcon fontSize="small" />
+                            </Tooltip>
+                            <Tooltip title="Excluir">
+                              <IconButton size="small" color="error" onClick={() => openDeleteDialog(field)}>
+                                <DeleteIcon fontSize="small" />
                               </IconButton>
-                            </span>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Tooltip title="Editar">
-                            <IconButton size="small" onClick={() => openEditDialog(field)} color="primary">
-                              <EditIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Excluir">
-                            <IconButton size="small" onClick={() => openDeleteDialog(field)} color="error">
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      </>
-                    )}
-                  </TableRow>
-                ))}
+                            </Tooltip>
+                          </TableCell>
+                        </>
+                      )}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </TableContainer>
         )}
       </Container>
 
-      {/* Dialog Criar / Editar */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{dialogMode === 'create' ? 'Novo Campo' : 'Editar Campo'}</DialogTitle>
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>{dialogMode === 'create' ? 'Novo Campo de Projeto' : 'Editar Campo de Projeto'}</DialogTitle>
         <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Nome do Campo"
-            type="text"
-            fullWidth
-            variant="outlined"
-            value={fieldLabel}
-            onChange={(e) => setFieldLabel(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSave();
-            }}
-            sx={{ mt: 2 }}
-          />
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, mt: 1 }}>
+            <TextField
+              autoFocus
+              label="Nome do Campo"
+              value={fieldLabel}
+              onChange={(event) => setFieldLabel(event.target.value)}
+              fullWidth
+            />
+
+            <TextField
+              select
+              label="Tipo"
+              value={fieldType}
+              onChange={(event) => setFieldType(event.target.value as HeaderFieldType)}
+              fullWidth
+            >
+              <MenuItem value="TEXT">Texto</MenuItem>
+              <MenuItem value="NUMBER">Numero</MenuItem>
+              <MenuItem value="SELECT">Lista dropdown</MenuItem>
+              <MenuItem value="COMPUTED">Calculado por formula</MenuItem>
+            </TextField>
+
+            {fieldType === 'SELECT' && (
+              <TextField
+                label="Opcoes da lista"
+                multiline
+                minRows={4}
+                fullWidth
+                value={fieldOptionsText}
+                onChange={(event) => setFieldOptionsText(event.target.value)}
+                helperText="Uma opcao por linha (ou separadas por virgula)."
+                sx={{ gridColumn: { xs: '1 / -1', md: '1 / 2' } }}
+              />
+            )}
+
+            {fieldType !== 'COMPUTED' && (
+              <TextField
+                label="Valor padrao"
+                type={fieldType === 'NUMBER' ? 'number' : 'text'}
+                value={defaultValue}
+                onChange={(event) => setDefaultValue(event.target.value)}
+                fullWidth
+                helperText={fieldType === 'SELECT' ? 'Para lista, deve ser uma opcao valida.' : ''}
+                sx={{ gridColumn: fieldType === 'SELECT' ? { xs: '1 / -1', md: '2 / 3' } : undefined }}
+              />
+            )}
+
+            {fieldType === 'COMPUTED' && (
+              <TextField
+                label="Formula"
+                multiline
+                minRows={4}
+                fullWidth
+                value={formulaExpression}
+                onChange={(event) => setFormulaExpression(event.target.value)}
+                helperText={'Ex.: {{Qtd_Pontos}} + {{Qtd_Cameras}} ou Se(Obra="Nova", 1, 0)'}
+                sx={{ gridColumn: '1 / -1' }}
+              />
+            )}
+          </Box>
         </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 0 }}>
-          <Button onClick={() => setDialogOpen(false)} color="inherit">
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <Button color="inherit" onClick={() => setDialogOpen(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleSave} variant="contained" disabled={!fieldLabel.trim() || saving}>
+          <Button
+            variant="contained"
+            onClick={handleSave}
+            disabled={
+              !fieldLabel.trim() ||
+              saving ||
+              (fieldType === 'SELECT' && optionsPreview.length === 0) ||
+              (fieldType === 'COMPUTED' && !formulaExpression.trim())
+            }
+          >
             {saving ? 'Salvando...' : dialogMode === 'create' ? 'Criar' : 'Salvar'}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Dialog Confirmar ExclusÃ£o */}
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Confirmar ExclusÃ£o</DialogTitle>
+        <DialogTitle>Excluir Campo</DialogTitle>
         <DialogContent>
           <Typography>
-            Tem certeza que deseja excluir o campo <strong>"{deletingField?.label}"</strong>?
-          </Typography>
-          <Typography variant="body2" color="error.light" sx={{ mt: 1 }}>
-            Esta aÃ§Ã£o nÃ£o pode ser desfeita.
+            Confirmar exclusao do campo <strong>{deletingField?.label}</strong>?
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 0 }}>
-          <Button onClick={() => setDeleteDialogOpen(false)} color="inherit">
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <Button color="inherit" onClick={() => setDeleteDialogOpen(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleDelete} variant="contained" color="error" disabled={deleting}>
+          <Button variant="contained" color="error" onClick={handleDelete} disabled={deleting}>
             {deleting ? 'Excluindo...' : 'Excluir'}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar Feedback */}
       <Snackbar
         open={snackbar.open}
-        autoHideDuration={3000}
-        onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
+        autoHideDuration={3200}
+        onClose={() => setSnackbar((previous) => ({ ...previous, open: false }))}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <Alert
-          onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
           severity={snackbar.severity}
           variant="filled"
-          sx={{ width: '100%' }}
+          onClose={() => setSnackbar((previous) => ({ ...previous, open: false }))}
         >
           {snackbar.message}
         </Alert>
@@ -394,4 +484,3 @@ export default function ProjectHeaderConfig() {
     </Box>
   );
 }
-

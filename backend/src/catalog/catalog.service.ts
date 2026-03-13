@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as ExcelJS from 'exceljs';
+import * as math from 'mathjs';
 
 type ImportRow = {
   local: string;
@@ -32,6 +33,24 @@ export class CatalogService {
       return '';
     }
     return normalized;
+  }
+
+  private normalizeFormulaExpression(formula?: string | null): string | null {
+    const normalized = this.normalizeNullable(formula || '');
+    if (!normalized) return null;
+
+    const withIf = normalized.replace(/\bse\s*\(/gi, 'if(');
+    const withEq = withIf.replace(/(?<![<>=!])=(?!=)/g, '==');
+    return withEq;
+  }
+
+  private validateFormulaExpression(formula: string) {
+    const withPlaceholders = formula.replace(/\{\{\s*[^}]+\s*\}\}/g, '1');
+    try {
+      math.parse(withPlaceholders);
+    } catch (error: any) {
+      throw new BadRequestException(`Formula de auto preenchimento invalida: ${error?.message || 'erro de sintaxe'}`);
+    }
   }
 
   private parseDelimitedLine(line: string, delimiter: string): string[] {
@@ -478,6 +497,7 @@ export class CatalogService {
     baseQuantity?: number;
     autoConfigFieldId?: string | null;
     autoMultiplier?: number;
+    autoFormulaExpression?: string | null;
   }) {
     const code = data?.code?.trim() || '';
     const description = data?.description?.trim();
@@ -489,6 +509,11 @@ export class CatalogService {
     if (data.autoConfigFieldId) {
       const field = await this.prisma.projectHeaderField.findUnique({ where: { id: data.autoConfigFieldId } });
       if (!field) throw new NotFoundException('Campo de configuracao nao encontrado.');
+    }
+
+    const normalizedAutoFormula = this.normalizeFormulaExpression(data.autoFormulaExpression);
+    if (normalizedAutoFormula) {
+      this.validateFormulaExpression(normalizedAutoFormula);
     }
 
     const maxOrder = await this.prisma.equipmentCatalog.aggregate({
@@ -505,6 +530,7 @@ export class CatalogService {
         baseQuantity: Number(data.baseQuantity ?? 0),
         autoConfigFieldId: data.autoConfigFieldId || null,
         autoMultiplier: Number(data.autoMultiplier ?? 1),
+        autoFormulaExpression: normalizedAutoFormula,
         sortOrder: nextOrder,
         isActive: true,
       },
@@ -524,6 +550,7 @@ export class CatalogService {
       baseQuantity?: number;
       autoConfigFieldId?: string | null;
       autoMultiplier?: number;
+      autoFormulaExpression?: string | null;
       isActive?: boolean;
     },
   ) {
@@ -535,12 +562,21 @@ export class CatalogService {
       if (!field) throw new NotFoundException('Campo de configuracao nao encontrado.');
     }
 
+    const normalizedAutoFormula =
+      data.autoFormulaExpression === undefined
+        ? undefined
+        : this.normalizeFormulaExpression(data.autoFormulaExpression);
+    if (normalizedAutoFormula) {
+      this.validateFormulaExpression(normalizedAutoFormula);
+    }
+
     const payload: {
       code?: string;
       description?: string;
       baseQuantity?: number;
       autoConfigFieldId?: string | null;
       autoMultiplier?: number;
+      autoFormulaExpression?: string | null;
       isActive?: boolean;
     } = {};
 
@@ -553,6 +589,7 @@ export class CatalogService {
     if (typeof data.baseQuantity === 'number') payload.baseQuantity = Number(data.baseQuantity);
     if (data.autoConfigFieldId !== undefined) payload.autoConfigFieldId = data.autoConfigFieldId || null;
     if (typeof data.autoMultiplier === 'number') payload.autoMultiplier = Number(data.autoMultiplier);
+    if (normalizedAutoFormula !== undefined) payload.autoFormulaExpression = normalizedAutoFormula;
     if (typeof data.isActive === 'boolean') payload.isActive = data.isActive;
 
     return this.prisma.equipmentCatalog.update({

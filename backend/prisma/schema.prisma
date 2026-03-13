@@ -88,6 +88,10 @@ model RequisitionItem {
 model ProjectHeaderField {
   id                 String                     @id @default(uuid())
   label              String
+  type               ProjectHeaderFieldType     @default(TEXT)
+  options            Json?
+  defaultValue       String?
+  formulaExpression  String?
   sortOrder          Int                        @default(0)
   isActive           Boolean                    @default(true)
   createdAt          DateTime                   @default(now())
@@ -144,6 +148,7 @@ model EquipmentCatalog {
   autoConfigFieldId String?
   autoConfigField   ProjectHeaderField? @relation(fields: [autoConfigFieldId], references: [id], onDelete: SetNull)
   autoMultiplier    Float               @default(1)
+  autoFormulaExpression String?
   sortOrder         Int                 @default(0)
   isActive          Boolean             @default(true)
   createdAt         DateTime            @default(now())
@@ -152,4 +157,11 @@ model EquipmentCatalog {
 
   @@index([operationId])
   @@index([autoConfigFieldId])
+}
+
+enum ProjectHeaderFieldType {
+  TEXT
+  NUMBER
+  SELECT
+  COMPUTED
 }

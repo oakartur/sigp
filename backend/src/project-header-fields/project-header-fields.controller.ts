@@ -2,7 +2,7 @@ import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nes
 import { ProjectHeaderFieldsService } from './project-header-fields.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { Role } from '@prisma/client';
+import { ProjectHeaderFieldType, Role } from '@prisma/client';
 import { AuthGuard } from '@nestjs/passport';
 
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -10,7 +10,7 @@ import { AuthGuard } from '@nestjs/passport';
 export class ProjectHeaderFieldsController {
   constructor(private readonly service: ProjectHeaderFieldsService) {}
 
-  @Roles(Role.ADMIN, Role.QUANTIFIER)
+  @Roles(Role.ADMIN)
   @Get()
   findAll() {
     return this.service.findAll();
@@ -18,7 +18,16 @@ export class ProjectHeaderFieldsController {
 
   @Roles(Role.ADMIN)
   @Post()
-  create(@Body() body: { label: string }) {
+  create(
+    @Body()
+    body: {
+      label: string;
+      type?: ProjectHeaderFieldType;
+      options?: string[];
+      defaultValue?: string | null;
+      formulaExpression?: string | null;
+    },
+  ) {
     return this.service.create(body);
   }
 
@@ -30,7 +39,18 @@ export class ProjectHeaderFieldsController {
 
   @Roles(Role.ADMIN)
   @Put(':id')
-  update(@Param('id') id: string, @Body() body: { label?: string; isActive?: boolean }) {
+  update(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      label?: string;
+      type?: ProjectHeaderFieldType;
+      options?: string[] | null;
+      defaultValue?: string | null;
+      formulaExpression?: string | null;
+      isActive?: boolean;
+    },
+  ) {
     return this.service.update(id, body);
   }
 

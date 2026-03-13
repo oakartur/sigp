@@ -28,6 +28,10 @@ interface ProjectConfig {
   field: {
     id: string;
     label: string;
+    type: 'TEXT' | 'NUMBER' | 'SELECT' | 'COMPUTED';
+    options?: string[] | null;
+    defaultValue?: string | null;
+    formulaExpression?: string | null;
   };
 }
 
@@ -57,6 +61,11 @@ export default function RequisitionGrid() {
   const [filterLocal, setFilterLocal] = useState('');
   const [filterOperation, setFilterOperation] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+
+  const editableConfigs = useMemo(
+    () => configs.filter((config) => config.field?.type !== 'COMPUTED'),
+    [configs],
+  );
 
   const loadAll = async () => {
     if (!reqId) return;
@@ -190,7 +199,7 @@ export default function RequisitionGrid() {
     try {
       setSavingConfigs(true);
       const response = await api.put(`/requisitions/${reqId}/project-configs`, {
-        configs: configs.map((config) => ({
+        configs: editableConfigs.map((config) => ({
           fieldId: config.fieldId,
           value: config.value ?? '',
         })),
@@ -210,6 +219,63 @@ export default function RequisitionGrid() {
     } finally {
       setSavingConfigs(false);
     }
+  };
+
+  const parseOptions = (options: unknown): string[] => {
+    if (!Array.isArray(options)) return [];
+    return options.map((option) => String(option ?? '').trim()).filter(Boolean);
+  };
+
+  const renderConfigInput = (config: ProjectConfig) => {
+    const fieldType = config.field?.type || 'TEXT';
+
+    if (fieldType === 'COMPUTED') {
+      return (
+        <TextField
+          key={config.id || config.fieldId}
+          fullWidth
+          size="small"
+          label={config.field?.label || 'Campo calculado'}
+          value={config.value || ''}
+          InputProps={{ readOnly: true }}
+          helperText={config.field?.formulaExpression ? `Formula: ${config.field.formulaExpression}` : 'Calculado automaticamente'}
+        />
+      );
+    }
+
+    if (fieldType === 'SELECT') {
+      const options = parseOptions(config.field?.options);
+      return (
+        <TextField
+          key={config.id || config.fieldId}
+          fullWidth
+          size="small"
+          select
+          label={config.field?.label || 'Campo'}
+          value={config.value || ''}
+          onChange={(event) => handleConfigChange(config.fieldId, event.target.value)}
+        >
+          <MenuItem value="">Selecione</MenuItem>
+          {options.map((option) => (
+            <MenuItem key={option} value={option}>
+              {option}
+            </MenuItem>
+          ))}
+        </TextField>
+      );
+    }
+
+    return (
+      <TextField
+        key={config.id || config.fieldId}
+        fullWidth
+        size="small"
+        type={fieldType === 'NUMBER' ? 'number' : 'text'}
+        label={config.field?.label || 'Campo'}
+        value={config.value || ''}
+        onChange={(event) => handleConfigChange(config.fieldId, event.target.value)}
+      />
+    );
   };
 
   const handleAutoFill = async () => {
@@ -293,14 +359,7 @@ export default function RequisitionGrid() {
               }}
             >
               {configs.map((config) => (
-                <TextField
-                  key={config.id || config.fieldId}
-                  fullWidth
-                  size="small"
-                  label={config.field?.label || 'Campo'}
-                  value={config.value || ''}
-                  onChange={(event) => handleConfigChange(config.fieldId, event.target.value)}
-                />
+                renderConfigInput(config)
               ))}
             </Box>
           )}

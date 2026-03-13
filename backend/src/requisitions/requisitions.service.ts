@@ -1,7 +1,12 @@
 import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FormulasService } from '../formulas/formulas.service';
-import { Prisma, RequisitionItem } from '@prisma/client';
+import { Prisma, ProjectHeaderFieldType, RequisitionItem } from '@prisma/client';
+import * as math from 'mathjs';
+
+type ConfigWithField = Prisma.RequisitionProjectConfigGetPayload<{
+  include: { field: true };
+}>;
 
 @Injectable()
 export class RequisitionsService {
@@ -13,6 +18,252 @@ export class RequisitionsService {
   private normalizeVersion(version: string | undefined, fallback: string): string {
     const normalized = version?.trim();
     return normalized && normalized.length > 0 ? normalized : fallback;
+  }
+
+  private normalizeText(value?: string | null): string {
+    return String(value ?? '').trim();
+  }
+
+  private normalizeFieldAlias(label: string): string {
+    return label
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .toLowerCase();
+  }
+
+  private normalizeExpression(expression: string): string {
+    const trimmed = this.normalizeText(expression);
+    const withIf = trimmed.replace(/\bse\s*\(/gi, 'if(');
+    return withIf.replace(/(?<![<>=!])=(?!=)/g, '==');
+  }
+
+  private parseNumber(value?: string | null): number | null {
+    const normalized = this.normalizeText(value);
+    if (!normalized) return null;
+
+    const parsed = Number(normalized.replace(',', '.'));
+    if (Number.isNaN(parsed)) return null;
+    return parsed;
+  }
+
+  private parseSelectOptions(rawOptions: unknown): string[] {
+    if (!Array.isArray(rawOptions)) return [];
+
+    const dedup = new Set<string>();
+    const result: string[] = [];
+    for (const option of rawOptions) {
+      const normalized = this.normalizeText(String(option ?? ''));
+      if (!normalized) continue;
+      const key = normalized.toLowerCase();
+      if (dedup.has(key)) continue;
+      dedup.add(key);
+      result.push(normalized);
+    }
+
+    return result;
+  }
+
+  private getFieldDefaultValue(field: {
+    type: ProjectHeaderFieldType;
+    defaultValue: string | null;
+    options: unknown;
+  }): string {
+    if (field.type === ProjectHeaderFieldType.COMPUTED) {
+      return '';
+    }
+
+    const normalizedDefault = this.normalizeText(field.defaultValue);
+    if (normalizedDefault) {
+      return normalizedDefault;
+    }
+
+    if (field.type === ProjectHeaderFieldType.SELECT) {
+      const options = this.parseSelectOptions(field.options);
+      return options[0] ?? '';
+    }
+
+    return '';
+  }
+
+  private buildFormulaScope(configs: ConfigWithField[]) {
+    const scope: Record<string, string | number | boolean> = {
+      if: (condition: unknown, whenTrue: unknown, whenFalse: unknown) => (condition ? whenTrue : whenFalse),
+      SE: (condition: unknown, whenTrue: unknown, whenFalse: unknown) => (condition ? whenTrue : whenFalse),
+      se: (condition: unknown, whenTrue: unknown, whenFalse: unknown) => (condition ? whenTrue : whenFalse),
+    } as any;
+
+    const valuesByFieldId = new Map<string, string | number | boolean>();
+    const valuesByAlias = new Map<string, string | number | boolean>();
+
+    for (const config of configs) {
+      const rawValue = this.normalizeText(config.value);
+      const numericValue = this.parseNumber(rawValue);
+      const normalizedLower = rawValue.toLowerCase();
+
+      let typedValue: string | number | boolean = rawValue;
+      if (numericValue !== null) {
+        typedValue = numericValue;
+      } else if (normalizedLower === 'true') {
+        typedValue = true;
+      } else if (normalizedLower === 'false') {
+        typedValue = false;
+      }
+
+      valuesByFieldId.set(config.fieldId, typedValue);
+      const aliasRaw = config.field.label
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      const alias = this.normalizeFieldAlias(config.field.label);
+
+      if (aliasRaw && !(aliasRaw in scope)) {
+        scope[aliasRaw] = typedValue;
+      }
+      if (alias && !valuesByAlias.has(alias)) {
+        valuesByAlias.set(alias, typedValue);
+      }
+      if (alias && !(alias in scope)) {
+        scope[alias] = typedValue;
+      }
+
+      const idAlias = `f_${config.fieldId.replace(/[^a-zA-Z0-9]+/g, '_')}`;
+      scope[idAlias] = typedValue;
+    }
+
+    return {
+      scope,
+      resolveToken: (token: string) => {
+        const directId = this.normalizeText(token);
+        if (valuesByFieldId.has(directId)) {
+          return valuesByFieldId.get(directId);
+        }
+
+        const alias = this.normalizeFieldAlias(token);
+        if (alias && valuesByAlias.has(alias)) {
+          return valuesByAlias.get(alias);
+        }
+
+        throw new BadRequestException(`Token de formula nao encontrado: ${token}`);
+      },
+    };
+  }
+
+  private evaluateExpression(expression: string, configs: ConfigWithField[], context: string) {
+    const normalizedExpression = this.normalizeExpression(expression);
+    if (!normalizedExpression) {
+      throw new BadRequestException(`Formula vazia em ${context}.`);
+    }
+
+    const { scope, resolveToken } = this.buildFormulaScope(configs);
+
+    let tokenIndex = 0;
+    const expressionWithTokens = normalizedExpression.replace(/\{\{\s*([^}]+)\s*\}\}/g, (_match, token) => {
+      const varName = `__token_${tokenIndex++}`;
+      scope[varName] = resolveToken(token) as any;
+      return varName;
+    });
+
+    try {
+      const compiled = math.compile(expressionWithTokens);
+      return compiled.evaluate(scope as any);
+    } catch (error: any) {
+      throw new BadRequestException(`Erro ao avaliar formula em ${context}: ${error?.message || 'erro desconhecido'}`);
+    }
+  }
+
+  private serializeComputedValue(result: unknown): string {
+    if (result === null || result === undefined) return '';
+    if (typeof result === 'number') {
+      if (!Number.isFinite(result)) {
+        throw new BadRequestException('Formula calculada retornou numero invalido.');
+      }
+      return String(result);
+    }
+    if (typeof result === 'boolean') {
+      return result ? '1' : '0';
+    }
+    if (typeof result === 'string') {
+      return result;
+    }
+
+    return String(result);
+  }
+
+  private toNumericQuantity(result: unknown, context: string): number {
+    if (typeof result === 'number') {
+      if (!Number.isFinite(result)) {
+        throw new BadRequestException(`Formula em ${context} retornou numero invalido.`);
+      }
+      return result;
+    }
+
+    if (typeof result === 'boolean') {
+      return result ? 1 : 0;
+    }
+
+    const normalized = this.normalizeText(String(result ?? ''));
+    if (!normalized) return 0;
+
+    const parsed = Number(normalized.replace(',', '.'));
+    if (Number.isNaN(parsed)) {
+      throw new BadRequestException(`Formula em ${context} deve retornar numero.`);
+    }
+
+    return parsed;
+  }
+
+  private async recomputeComputedProjectConfigs(tx: Prisma.TransactionClient, requisitionId: string) {
+    const configs = await tx.requisitionProjectConfig.findMany({
+      where: {
+        requisitionId,
+        field: { isActive: true },
+      },
+      include: { field: true },
+      orderBy: [{ field: { sortOrder: 'asc' } }],
+    });
+
+    const computedConfigs = configs.filter(
+      (config) => config.field.type === ProjectHeaderFieldType.COMPUTED && this.normalizeText(config.field.formulaExpression),
+    );
+
+    if (computedConfigs.length === 0) {
+      return;
+    }
+
+    const changed = new Map<string, string>();
+
+    for (let pass = 0; pass < configs.length; pass++) {
+      let hasChanges = false;
+
+      for (const config of computedConfigs) {
+        const formula = this.normalizeText(config.field.formulaExpression);
+        if (!formula) continue;
+
+        const evaluated = this.evaluateExpression(formula, configs, `campo calculado '${config.field.label}'`);
+        const nextValue = this.serializeComputedValue(evaluated);
+        const currentValue = this.normalizeText(config.value);
+
+        if (nextValue !== currentValue) {
+          config.value = nextValue;
+          changed.set(config.id, nextValue);
+          hasChanges = true;
+        }
+      }
+
+      if (!hasChanges) {
+        break;
+      }
+    }
+
+    for (const [configId, value] of changed.entries()) {
+      await tx.requisitionProjectConfig.update({
+        where: { id: configId },
+        data: { value },
+      });
+    }
   }
 
   private async buildDefaultVersion(projectId: string): Promise<string> {
@@ -37,31 +288,38 @@ export class RequisitionsService {
     const existingConfigs = await tx.requisitionProjectConfig.findMany({
       where: { requisitionId },
     });
-    const existingFieldIds = new Set(existingConfigs.map((config: any) => config.fieldId));
+    const existingFieldIds = new Set(existingConfigs.map((config) => config.fieldId));
 
     const sourceMap = new Map<string, string | null>();
     if (sourceRequisitionId) {
       const sourceConfigs = await tx.requisitionProjectConfig.findMany({
         where: { requisitionId: sourceRequisitionId },
       });
-      sourceConfigs.forEach((sourceConfig: any) => {
+      sourceConfigs.forEach((sourceConfig) => {
         sourceMap.set(sourceConfig.fieldId, sourceConfig.value ?? null);
       });
     }
 
     const missingConfigs = headerFields
       .filter((field) => !existingFieldIds.has(field.id))
-      .map((field) => ({
-        requisitionId,
-        fieldId: field.id,
-        value: sourceMap.get(field.id) ?? '',
-      }));
+      .map((field) => {
+        const sourceValue = sourceMap.get(field.id);
+        const value = sourceValue !== undefined && sourceValue !== null ? sourceValue : this.getFieldDefaultValue(field);
+
+        return {
+          requisitionId,
+          fieldId: field.id,
+          value,
+        };
+      });
 
     if (missingConfigs.length > 0) {
       await tx.requisitionProjectConfig.createMany({
         data: missingConfigs,
       });
     }
+
+    await this.recomputeComputedProjectConfigs(tx, requisitionId);
 
     return tx.requisitionProjectConfig.findMany({
       where: {
@@ -283,9 +541,40 @@ export class RequisitionsService {
       throw new BadRequestException('Requisicao em modo somente leitura.');
     }
 
-    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await this.syncProjectConfigs(tx, reqId);
+
+      const fieldIds = Array.from(new Set(configs.map((config) => config.fieldId).filter(Boolean)));
+      const fields = await tx.projectHeaderField.findMany({
+        where: { id: { in: fieldIds }, isActive: true },
+      });
+      const fieldsById = new Map(fields.map((field) => [field.id, field]));
+
       for (const config of configs) {
         if (!config.fieldId) continue;
+
+        const field = fieldsById.get(config.fieldId);
+        if (!field) continue;
+
+        if (field.type === ProjectHeaderFieldType.COMPUTED) {
+          continue;
+        }
+
+        const normalizedValue = this.normalizeText(config.value);
+
+        if (field.type === ProjectHeaderFieldType.NUMBER && normalizedValue) {
+          const parsed = Number(normalizedValue.replace(',', '.'));
+          if (Number.isNaN(parsed)) {
+            throw new BadRequestException(`Campo '${field.label}' exige valor numerico.`);
+          }
+        }
+
+        if (field.type === ProjectHeaderFieldType.SELECT && normalizedValue) {
+          const options = this.parseSelectOptions(field.options);
+          if (!options.includes(normalizedValue)) {
+            throw new BadRequestException(`Campo '${field.label}' exige um valor da lista configurada.`);
+          }
+        }
 
         await tx.requisitionProjectConfig.upsert({
           where: {
@@ -297,16 +586,16 @@ export class RequisitionsService {
           create: {
             requisitionId: reqId,
             fieldId: config.fieldId,
-            value: config.value ?? '',
+            value: normalizedValue,
           },
           update: {
-            value: config.value ?? '',
+            value: normalizedValue,
           },
         });
       }
-    });
 
-    return this.findProjectConfigs(reqId);
+      return this.syncProjectConfigs(tx, reqId);
+    });
   }
 
   async autoFillItemsFromProjectConfigs(reqId: string) {
@@ -316,20 +605,14 @@ export class RequisitionsService {
       throw new BadRequestException('Requisicao em modo somente leitura.');
     }
 
-    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const configs = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await this.syncCatalogItemsForRequisition(tx, reqId);
+      return this.syncProjectConfigs(tx, reqId);
     });
 
-    const configs = await this.prisma.requisitionProjectConfig.findMany({
-      where: { requisitionId: reqId },
-    });
-    const configMap = new Map<string, number>();
+    const configByFieldId = new Map<string, string>();
     for (const config of configs) {
-      if (!config.fieldId) continue;
-      const parsed = Number(String(config.value ?? '').replace(',', '.'));
-      if (!Number.isNaN(parsed)) {
-        configMap.set(config.fieldId, parsed);
-      }
+      configByFieldId.set(config.fieldId, this.normalizeText(config.value));
     }
 
     const items = await this.prisma.requisitionItem.findMany({
@@ -339,19 +622,35 @@ export class RequisitionsService {
 
     for (const item of items as any[]) {
       const catalog = item.equipmentCatalog;
-      if (!catalog || !catalog.autoConfigFieldId) continue;
+      if (!catalog) continue;
 
-      const configValue = configMap.get(catalog.autoConfigFieldId);
-      if (configValue === undefined) continue;
+      let autoQuantity: number | null = null;
 
-      const base = catalog.baseQuantity && catalog.baseQuantity !== 0 ? catalog.baseQuantity : 1;
-      const multiplier = catalog.autoMultiplier ?? 1;
-      const calculatedValue = configValue * base * multiplier;
+      if (this.normalizeText(catalog.autoFormulaExpression)) {
+        const evaluated = this.evaluateExpression(
+          catalog.autoFormulaExpression,
+          configs,
+          `auto formula do equipamento '${catalog.description}'`,
+        );
+        autoQuantity = this.toNumericQuantity(evaluated, `equipamento '${catalog.description}'`);
+      } else if (catalog.autoConfigFieldId) {
+        const configValueRaw = configByFieldId.get(catalog.autoConfigFieldId);
+        const configValue = this.parseNumber(configValueRaw);
+        if (configValue !== null) {
+          const base = catalog.baseQuantity && catalog.baseQuantity !== 0 ? catalog.baseQuantity : 1;
+          const multiplier = catalog.autoMultiplier ?? 1;
+          autoQuantity = configValue * base * multiplier;
+        }
+      }
 
+      if (autoQuantity === null) continue;
+
+      // Requisito: auto preenchimento deve sobrepor a quantidade da requisicao.
       await this.prisma.requisitionItem.update({
         where: { id: item.id },
         data: {
-          calculatedValue,
+          calculatedValue: autoQuantity,
+          manualQuantity: autoQuantity,
           versionLock: { increment: 1 },
         },
       });

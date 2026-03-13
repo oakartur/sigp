@@ -34,6 +34,7 @@ import { api } from '../context/AuthContext';
 interface HeaderField {
   id: string;
   label: string;
+  type?: 'TEXT' | 'NUMBER' | 'SELECT' | 'COMPUTED';
 }
 
 interface EquipmentCatalog {
@@ -43,6 +44,7 @@ interface EquipmentCatalog {
   baseQuantity: number;
   autoConfigFieldId?: string | null;
   autoMultiplier: number;
+  autoFormulaExpression?: string | null;
   isActive: boolean;
 }
 
@@ -71,6 +73,7 @@ type EquipmentDialogState = {
   baseQuantity: string;
   autoConfigFieldId: string;
   autoMultiplier: string;
+  autoFormulaExpression: string;
 };
 
 export default function CatalogsConfig() {
@@ -94,6 +97,7 @@ export default function CatalogsConfig() {
     baseQuantity: '0',
     autoConfigFieldId: '',
     autoMultiplier: '1',
+    autoFormulaExpression: '',
   });
 
   const fetchData = async () => {
@@ -193,6 +197,7 @@ export default function CatalogsConfig() {
         baseQuantity: Number(equipmentDialog.baseQuantity || 0),
         autoConfigFieldId: equipmentDialog.autoConfigFieldId || null,
         autoMultiplier: Number(equipmentDialog.autoMultiplier || 1),
+        autoFormulaExpression: equipmentDialog.autoFormulaExpression.trim() || null,
       };
       if (equipmentDialog.id) {
         await api.put(`/catalog/equipments/${equipmentDialog.id}`, payload);
@@ -206,6 +211,7 @@ export default function CatalogsConfig() {
         baseQuantity: '0',
         autoConfigFieldId: '',
         autoMultiplier: '1',
+        autoFormulaExpression: '',
       });
       await fetchData();
     } catch (err) {
@@ -422,6 +428,7 @@ export default function CatalogsConfig() {
                                 baseQuantity: '0',
                                 autoConfigFieldId: '',
                                 autoMultiplier: '1',
+                                autoFormulaExpression: '',
                               })
                             }
                           >
@@ -455,13 +462,14 @@ export default function CatalogsConfig() {
                             <TableCell align="right">Qtd Base</TableCell>
                             <TableCell>Auto por Campo Config.</TableCell>
                             <TableCell align="right">Multiplicador</TableCell>
+                            <TableCell>Formula Auto</TableCell>
                             <TableCell align="right">Acoes</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
                           {operation.equipments.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={6}>
+                              <TableCell colSpan={7}>
                                 <Typography variant="body2" color="text.secondary">
                                   Nenhum equipamento nesta operacao.
                                 </Typography>
@@ -477,6 +485,7 @@ export default function CatalogsConfig() {
                                   {headerFields.find((field) => field.id === equipment.autoConfigFieldId)?.label || '-'}
                                 </TableCell>
                                 <TableCell align="right">{equipment.autoMultiplier}</TableCell>
+                                <TableCell>{equipment.autoFormulaExpression || '-'}</TableCell>
                                 <TableCell align="right">
                                   <IconButton
                                     color="primary"
@@ -491,6 +500,7 @@ export default function CatalogsConfig() {
                                         baseQuantity: String(equipment.baseQuantity ?? 0),
                                         autoConfigFieldId: equipment.autoConfigFieldId || '',
                                         autoMultiplier: String(equipment.autoMultiplier ?? 1),
+                                        autoFormulaExpression: equipment.autoFormulaExpression || '',
                                       })
                                     }
                                   >
@@ -575,6 +585,7 @@ export default function CatalogsConfig() {
             baseQuantity: '0',
             autoConfigFieldId: '',
             autoMultiplier: '1',
+            autoFormulaExpression: '',
           })
         }
         maxWidth="sm"
@@ -624,6 +635,15 @@ export default function CatalogsConfig() {
               onChange={(e) => setEquipmentDialog((prev) => ({ ...prev, autoMultiplier: e.target.value }))}
               fullWidth
             />
+            <TextField
+              label="Formula de Auto Preenchimento (opcional)"
+              value={equipmentDialog.autoFormulaExpression}
+              onChange={(e) => setEquipmentDialog((prev) => ({ ...prev, autoFormulaExpression: e.target.value }))}
+              fullWidth
+              multiline
+              minRows={3}
+              helperText={'Quando preenchida, sobrepoe Campo+Multiplicador. Ex.: Se(Obra=\"Nova\", 1, 0)'}
+            />
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 0 }}>
@@ -637,6 +657,7 @@ export default function CatalogsConfig() {
                 baseQuantity: '0',
                 autoConfigFieldId: '',
                 autoMultiplier: '1',
+                autoFormulaExpression: '',
               })
             }
           >

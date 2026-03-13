@@ -47,7 +47,8 @@ export default function Dashboard() {
   const [newProjectName, setNewProjectName] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const isAdminOrQuantifier = user?.role === 'ADMIN' || user?.role === 'QUANTIFIER';
+  const isAdmin = user?.role === 'ADMIN';
+  const canCreateProject = user?.role === 'ADMIN' || user?.role === 'QUANTIFIER';
 
   useEffect(() => {
     fetchProjects();
@@ -131,15 +132,19 @@ export default function Dashboard() {
               </Typography>
             </Box>
 
-            {isAdminOrQuantifier && (
+            {(isAdmin || canCreateProject) && (
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                <Button variant="outlined" startIcon={<InventoryIcon />} onClick={() => navigate('/settings/catalogs')}>
-                  Catalogo
-                </Button>
-                <Button variant="outlined" startIcon={<TuneIcon />} onClick={() => navigate('/settings/project')}>
-                  Configuracoes de Projeto
-                </Button>
-                {user?.role === 'ADMIN' && (
+                {isAdmin && (
+                  <>
+                    <Button variant="outlined" startIcon={<InventoryIcon />} onClick={() => navigate('/settings/catalogs')}>
+                      Catalogo
+                    </Button>
+                    <Button variant="outlined" startIcon={<TuneIcon />} onClick={() => navigate('/settings/project')}>
+                      Configuracoes de Projeto
+                    </Button>
+                  </>
+                )}
+                {isAdmin && (
                   <Tooltip title="Configuracoes de sistema em breve">
                     <span>
                       <Button variant="outlined" disabled startIcon={<SettingsIcon />}>
@@ -148,9 +153,11 @@ export default function Dashboard() {
                     </span>
                   </Tooltip>
                 )}
-                <Button variant="contained" startIcon={<AddIcon />} onClick={() => setOpenModal(true)}>
-                  Novo Projeto
-                </Button>
+                {canCreateProject && (
+                  <Button variant="contained" startIcon={<AddIcon />} onClick={() => setOpenModal(true)}>
+                    Novo Projeto
+                  </Button>
+                )}
               </Stack>
             )}
           </Stack>
