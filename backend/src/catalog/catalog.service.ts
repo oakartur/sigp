@@ -25,6 +25,15 @@ export class CatalogService {
     return (value || '').trim();
   }
 
+  private normalizeCode(value: string): string {
+    const normalized = this.normalizeNullable(value);
+    const upper = normalized.toUpperCase();
+    if (!normalized || upper === 'NULL' || upper === 'NULO' || normalized === '-') {
+      return '';
+    }
+    return normalized;
+  }
+
   private parseDelimitedLine(line: string, delimiter: string): string[] {
     const result: string[] = [];
     let current = '';
@@ -85,8 +94,8 @@ export class CatalogService {
     return { localIdx, operationIdx, codeIdx, descriptionIdx };
   }
 
-  private parseCsvRows(buffer: Buffer): ImportRow[] {
-    const content = buffer.toString('utf8').replace(/^\uFEFF/, '');
+  private parseCsvContent(contentRaw: string): ImportRow[] {
+    const content = contentRaw.replace(/^\uFEFF/, '');
     const lines = content
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -111,12 +120,32 @@ export class CatalogService {
       rows.push({
         local: this.normalizeNullable(cols[indexes.localIdx] || ''),
         operation: this.normalizeNullable(cols[indexes.operationIdx] || ''),
-        code: this.normalizeNullable(indexes.codeIdx >= 0 ? cols[indexes.codeIdx] || '' : ''),
+        code: this.normalizeCode(indexes.codeIdx >= 0 ? cols[indexes.codeIdx] || '' : ''),
         description: this.normalizeNullable(cols[indexes.descriptionIdx] || ''),
       });
     }
 
     return rows;
+  }
+
+  private parseCsvRows(buffer: Buffer): ImportRow[] {
+    const attempts = ['utf8', 'latin1'] as const;
+    let lastError: unknown;
+
+    for (const encoding of attempts) {
+      try {
+        const content = buffer.toString(encoding);
+        const rows = this.parseCsvContent(content);
+        if (rows.length > 0) return rows;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+    throw new BadRequestException('Nao foi possivel ler o CSV. Verifique a codificacao do arquivo.');
   }
 
   private async parseXlsxRows(buffer: Buffer): Promise<ImportRow[]> {
@@ -136,7 +165,7 @@ export class CatalogService {
 
       const local = this.normalizeNullable(values[indexes.localIdx] || '');
       const operation = this.normalizeNullable(values[indexes.operationIdx] || '');
-      const code = this.normalizeNullable(indexes.codeIdx >= 0 ? values[indexes.codeIdx] || '' : '');
+      const code = this.normalizeCode(indexes.codeIdx >= 0 ? values[indexes.codeIdx] || '' : '');
       const description = this.normalizeNullable(values[indexes.descriptionIdx] || '');
 
       if (!local && !operation && !description && !code) continue;

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { AxiosError } from 'axios';
 import { useNavigate } from 'react-router-dom';
 import {
   AppBar,
@@ -239,7 +240,12 @@ export default function CatalogsConfig() {
       await fetchData();
     } catch (err) {
       console.error('Failed to import catalog', err);
-      alert('Erro ao importar catalogo. Verifique o formato do arquivo.');
+      const apiError = err as AxiosError<{ message?: string | string[] }>;
+      const backendMessage = apiError.response?.data?.message;
+      const errorMessage = Array.isArray(backendMessage)
+        ? backendMessage.join(' ')
+        : backendMessage || 'Erro ao importar catalogo. Verifique o formato do arquivo.';
+      alert(errorMessage);
     } finally {
       setImporting(false);
       event.target.value = '';
