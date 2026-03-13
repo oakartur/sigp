@@ -14,4 +14,6 @@ RUN npx prisma generate
 
 RUN npm run build
 
+RUN ls -la /usr/src/app/dist
+
 CMD ["npm", "run", "start:prod"]
