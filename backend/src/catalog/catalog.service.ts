@@ -45,7 +45,17 @@ export class CatalogService {
       .replace(/\be\s*\(/gi, 'and(')
       .replace(/;/g, ',');
     const withEq = withIf.replace(/(?<![<>=!])=(?!=)/g, '==');
-    return withEq;
+    return this.rewriteEqualityOperators(withEq);
+  }
+
+  private rewriteEqualityOperators(expression: string): string {
+    const operand =
+      '(?:__token_\\d+|[A-Za-z_][A-Za-z0-9_]*|"(?:[^"\\\\]|\\\\.)*"|\'(?:[^\'\\\\]|\\\\.)*\'|-?\\d+(?:\\.\\d+)?)';
+
+    const neqRegex = new RegExp(`(${operand})\\s*!=\\s*(${operand})`, 'g');
+    const eqRegex = new RegExp(`(${operand})\\s*==\\s*(${operand})`, 'g');
+
+    return expression.replace(neqRegex, 'neq($1,$2)').replace(eqRegex, 'eq($1,$2)');
   }
 
   private validateFormulaExpression(formula: string) {
@@ -637,6 +647,15 @@ export class CatalogService {
     return text;
   }
 
+  private isEqual(left: unknown, right: unknown): boolean {
+    const a = this.parseFormulaValue(left);
+    const b = this.parseFormulaValue(right);
+
+    if (typeof a === 'number' && typeof b === 'number') return a === b;
+    if (typeof a === 'boolean' && typeof b === 'boolean') return a === b;
+    return String(a) === String(b);
+  }
+
   private getFieldDefault(field: { defaultValue?: string | null; options?: unknown; type?: string }) {
     if (field.defaultValue && this.normalizeNullable(field.defaultValue)) {
       return this.parseFormulaValue(field.defaultValue);
@@ -714,6 +733,8 @@ export class CatalogService {
       e: (...args: unknown[]) => args.every((value) => Boolean(value)),
       or: (...args: unknown[]) => args.some((value) => Boolean(value)),
       ou: (...args: unknown[]) => args.some((value) => Boolean(value)),
+      eq: (left: unknown, right: unknown) => this.isEqual(left, right),
+      neq: (left: unknown, right: unknown) => !this.isEqual(left, right),
     };
 
     const resolveByField = (field: (typeof fields)[number]) => {

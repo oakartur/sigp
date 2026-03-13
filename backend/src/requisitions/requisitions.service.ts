@@ -40,7 +40,41 @@ export class RequisitionsService {
       .replace(/\bou\s*\(/gi, 'or(')
       .replace(/\be\s*\(/gi, 'and(')
       .replace(/;/g, ',');
-    return withIf.replace(/(?<![<>=!])=(?!=)/g, '==');
+    const withEq = withIf.replace(/(?<![<>=!])=(?!=)/g, '==');
+    return this.rewriteEqualityOperators(withEq);
+  }
+
+  private rewriteEqualityOperators(expression: string): string {
+    const operand =
+      '(?:__token_\\d+|[A-Za-z_][A-Za-z0-9_]*|"(?:[^"\\\\]|\\\\.)*"|\'(?:[^\'\\\\]|\\\\.)*\'|-?\\d+(?:\\.\\d+)?)';
+
+    const neqRegex = new RegExp(`(${operand})\\s*!=\\s*(${operand})`, 'g');
+    const eqRegex = new RegExp(`(${operand})\\s*==\\s*(${operand})`, 'g');
+
+    return expression.replace(neqRegex, 'neq($1,$2)').replace(eqRegex, 'eq($1,$2)');
+  }
+
+  private toComparable(value: unknown): string | number | boolean {
+    if (typeof value === 'number' || typeof value === 'boolean') return value;
+
+    const text = this.normalizeText(String(value ?? ''));
+    const lower = text.toLowerCase();
+    if (lower === 'true') return true;
+    if (lower === 'false') return false;
+
+    const parsed = Number(text.replace(',', '.'));
+    if (!Number.isNaN(parsed)) return parsed;
+
+    return text;
+  }
+
+  private isEqual(left: unknown, right: unknown): boolean {
+    const a = this.toComparable(left);
+    const b = this.toComparable(right);
+
+    if (typeof a === 'number' && typeof b === 'number') return a === b;
+    if (typeof a === 'boolean' && typeof b === 'boolean') return a === b;
+    return String(a) === String(b);
   }
 
   private parseNumber(value?: string | null): number | null {
@@ -100,6 +134,8 @@ export class RequisitionsService {
       or: (...args: unknown[]) => args.some((value) => Boolean(value)),
       E: (...args: unknown[]) => args.every((value) => Boolean(value)),
       OU: (...args: unknown[]) => args.some((value) => Boolean(value)),
+      eq: (left: unknown, right: unknown) => this.isEqual(left, right),
+      neq: (left: unknown, right: unknown) => !this.isEqual(left, right),
     } as any;
 
     const valuesByFieldId = new Map<string, string | number | boolean>();
@@ -116,6 +152,9 @@ export class RequisitionsService {
         config.field.type === ProjectHeaderFieldType.COMPUTED
       ) {
         typedValue = numericValue ?? 0;
+      } else if (config.field.type === ProjectHeaderFieldType.TEXT && rawValue === '') {
+        // Campo textual vazio participa de formulas numericas como zero.
+        typedValue = 0;
       } else if (numericValue !== null) {
         typedValue = numericValue;
       } else if (normalizedLower === 'true') {
