@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AxiosError } from 'axios';
 import { useNavigate } from 'react-router-dom';
 import {
+  Alert,
   AppBar,
   Toolbar,
   IconButton,
@@ -22,6 +23,9 @@ import {
   TextField,
   MenuItem,
   CircularProgress,
+  Chip,
+  Divider,
+  Stack,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
@@ -35,6 +39,8 @@ interface HeaderField {
   id: string;
   label: string;
   type?: 'TEXT' | 'NUMBER' | 'SELECT' | 'COMPUTED';
+  options?: string[] | null;
+  defaultValue?: string | null;
 }
 
 interface EquipmentCatalog {
@@ -76,6 +82,17 @@ type EquipmentDialogState = {
   autoFormulaExpression: string;
 };
 
+type FormulaValidation = {
+  isValid: boolean;
+  normalizedExpression: string;
+  recognizedCommands: string[];
+  recognizedFields: Array<{ id: string; label: string }>;
+  unknownSymbols: string[];
+  canEvaluate: boolean;
+  result: string | number | boolean | null;
+  error?: string | null;
+};
+
 export default function CatalogsConfig() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -99,6 +116,66 @@ export default function CatalogsConfig() {
     autoMultiplier: '1',
     autoFormulaExpression: '',
   });
+  const [formulaContext, setFormulaContext] = useState<Record<string, string>>({});
+  const [formulaValidation, setFormulaValidation] = useState<FormulaValidation | null>(null);
+  const [validatingFormula, setValidatingFormula] = useState(false);
+
+  const parseFieldOptions = (options: unknown): string[] => {
+    if (!Array.isArray(options)) return [];
+    return options.map((option) => String(option ?? '').trim()).filter(Boolean);
+  };
+
+  const buildDefaultFormulaContext = () => {
+    const context: Record<string, string> = {};
+    for (const field of headerFields) {
+      if (field.type === 'COMPUTED') continue;
+      const options = parseFieldOptions(field.options);
+      const defaultValue = String(field.defaultValue ?? '').trim();
+      context[field.id] = defaultValue || (field.type === 'SELECT' ? options[0] || '' : '');
+    }
+    return context;
+  };
+
+  const resetFormulaTester = () => {
+    setFormulaContext(buildDefaultFormulaContext());
+    setFormulaValidation(null);
+  };
+
+  const validateAutoFormula = async (formula: string, context: Record<string, string>) => {
+    const normalized = formula.trim();
+    if (!normalized) {
+      setFormulaValidation(null);
+      return;
+    }
+
+    try {
+      setValidatingFormula(true);
+      const response = await api.post('/catalog/formula/validate', {
+        formula: normalized,
+        context,
+      });
+      setFormulaValidation(response.data || null);
+    } catch (err) {
+      console.error('Failed to validate catalog formula', err);
+      const apiError = err as AxiosError<{ message?: string | string[] }>;
+      const backendMessage = apiError.response?.data?.message;
+      const errorMessage = Array.isArray(backendMessage)
+        ? backendMessage.join(' ')
+        : backendMessage || 'Formula invalida.';
+      setFormulaValidation({
+        isValid: false,
+        normalizedExpression: normalized,
+        recognizedCommands: [],
+        recognizedFields: [],
+        unknownSymbols: [],
+        canEvaluate: false,
+        result: null,
+        error: errorMessage,
+      });
+    } finally {
+      setValidatingFormula(false);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -136,6 +213,25 @@ export default function CatalogsConfig() {
       setFilterOperationId('');
     }
   }, [filterOperationId, operationOptions]);
+
+  useEffect(() => {
+    if (!equipmentDialog.open) return;
+    if (Object.keys(formulaContext).length === 0 && headerFields.length > 0) {
+      setFormulaContext(buildDefaultFormulaContext());
+      return;
+    }
+    const formula = equipmentDialog.autoFormulaExpression.trim();
+    if (!formula) {
+      setFormulaValidation(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      validateAutoFormula(formula, formulaContext);
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [equipmentDialog.open, equipmentDialog.autoFormulaExpression, formulaContext, headerFields]);
 
   const filteredLocals = locals
     .filter((local) => !filterLocalId || local.id === filterLocalId)
@@ -213,6 +309,7 @@ export default function CatalogsConfig() {
         autoMultiplier: '1',
         autoFormulaExpression: '',
       });
+      resetFormulaTester();
       await fetchData();
     } catch (err) {
       console.error('Failed to save equipment', err);
@@ -419,7 +516,8 @@ export default function CatalogsConfig() {
                             variant="outlined"
                             size="small"
                             startIcon={<AddIcon />}
-                            onClick={() =>
+                            onClick={() => {
+                              resetFormulaTester();
                               setEquipmentDialog({
                                 open: true,
                                 operationId: operation.id,
@@ -429,8 +527,8 @@ export default function CatalogsConfig() {
                                 autoConfigFieldId: '',
                                 autoMultiplier: '1',
                                 autoFormulaExpression: '',
-                              })
-                            }
+                              });
+                            }}
                           >
                             Novo Equipamento
                           </Button>
@@ -490,7 +588,8 @@ export default function CatalogsConfig() {
                                   <IconButton
                                     color="primary"
                                     size="small"
-                                    onClick={() =>
+                                    onClick={() => {
+                                      resetFormulaTester();
                                       setEquipmentDialog({
                                         open: true,
                                         id: equipment.id,
@@ -501,8 +600,8 @@ export default function CatalogsConfig() {
                                         autoConfigFieldId: equipment.autoConfigFieldId || '',
                                         autoMultiplier: String(equipment.autoMultiplier ?? 1),
                                         autoFormulaExpression: equipment.autoFormulaExpression || '',
-                                      })
-                                    }
+                                      });
+                                    }}
                                   >
                                     <EditIcon fontSize="small" />
                                   </IconButton>
@@ -577,7 +676,8 @@ export default function CatalogsConfig() {
 
       <Dialog
         open={equipmentDialog.open}
-        onClose={() =>
+        onClose={() => {
+          resetFormulaTester();
           setEquipmentDialog({
             open: false,
             code: '',
@@ -586,8 +686,8 @@ export default function CatalogsConfig() {
             autoConfigFieldId: '',
             autoMultiplier: '1',
             autoFormulaExpression: '',
-          })
-        }
+          });
+        }}
         maxWidth="sm"
         fullWidth
       >
@@ -644,12 +744,125 @@ export default function CatalogsConfig() {
               minRows={3}
               helperText={'Quando preenchida, sobrepoe Campo+Multiplicador. Ex.: Se(Obra=\"Nova\", 1, 0)'}
             />
+
+            {equipmentDialog.autoFormulaExpression.trim() && (
+              <>
+                <Divider />
+                <Typography variant="subtitle2" sx={{ mt: 0.5 }}>
+                  Teste dinamico da formula
+                </Typography>
+
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                    gap: 1.25,
+                  }}
+                >
+                  {headerFields
+                    .filter((field) => field.type !== 'COMPUTED')
+                    .map((field) => {
+                      const options = parseFieldOptions(field.options);
+                      const value = formulaContext[field.id] ?? '';
+
+                      if (field.type === 'SELECT') {
+                        return (
+                          <TextField
+                            key={field.id}
+                            select
+                            label={`Teste: ${field.label}`}
+                            value={value}
+                            onChange={(event) =>
+                              setFormulaContext((prev) => ({
+                                ...prev,
+                                [field.id]: event.target.value,
+                              }))
+                            }
+                            size="small"
+                          >
+                            <MenuItem value="">Selecione</MenuItem>
+                            {options.map((option) => (
+                              <MenuItem key={option} value={option}>
+                                {option}
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                        );
+                      }
+
+                      return (
+                        <TextField
+                          key={field.id}
+                          label={`Teste: ${field.label}`}
+                          type={field.type === 'NUMBER' ? 'number' : 'text'}
+                          value={value}
+                          onChange={(event) =>
+                            setFormulaContext((prev) => ({
+                              ...prev,
+                              [field.id]: event.target.value,
+                            }))
+                          }
+                          size="small"
+                        />
+                      );
+                    })}
+                </Box>
+
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => validateAutoFormula(equipmentDialog.autoFormulaExpression, formulaContext)}
+                    disabled={validatingFormula}
+                  >
+                    {validatingFormula ? 'Validando...' : 'Validar agora'}
+                  </Button>
+                  {formulaValidation?.result !== null && formulaValidation?.result !== undefined && (
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      Resultado de teste: {String(formulaValidation.result)}
+                    </Typography>
+                  )}
+                </Box>
+
+                {formulaValidation && (
+                  <Stack spacing={1}>
+                    <Alert severity={formulaValidation.isValid ? 'success' : 'error'}>
+                      {formulaValidation.isValid
+                        ? 'Formula valida e interpretada.'
+                        : formulaValidation.error || 'Formula invalida.'}
+                    </Alert>
+
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">
+                        Expressao normalizada
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
+                        {formulaValidation.normalizedExpression}
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                      {formulaValidation.recognizedCommands.map((command) => (
+                        <Chip key={command} size="small" color="primary" variant="outlined" label={`Comando: ${command}`} />
+                      ))}
+                      {formulaValidation.recognizedFields.map((field) => (
+                        <Chip key={field.id} size="small" color="success" variant="outlined" label={`Campo: ${field.label}`} />
+                      ))}
+                      {formulaValidation.unknownSymbols.map((symbol) => (
+                        <Chip key={symbol} size="small" color="error" variant="outlined" label={`Nao reconhecido: ${symbol}`} />
+                      ))}
+                    </Box>
+                  </Stack>
+                )}
+              </>
+            )}
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 0 }}>
           <Button
             color="inherit"
-            onClick={() =>
+            onClick={() => {
+              resetFormulaTester();
               setEquipmentDialog({
                 open: false,
                 code: '',
@@ -658,8 +871,8 @@ export default function CatalogsConfig() {
                 autoConfigFieldId: '',
                 autoMultiplier: '1',
                 autoFormulaExpression: '',
-              })
-            }
+              });
+            }}
           >
             Cancelar
           </Button>

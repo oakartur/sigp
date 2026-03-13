@@ -121,4 +121,16 @@ export class CatalogController {
     }
     return this.catalogService.importCatalog(file.originalname || 'catalog.csv', file.buffer);
   }
+
+  @Roles(Role.ADMIN)
+  @Post('formula/validate')
+  validateFormula(
+    @Body()
+    body: {
+      formula: string;
+      context?: Record<string, string | number | boolean | null>;
+    },
+  ) {
+    return this.catalogService.validateAutoFormula(body?.formula || '', body?.context ?? {});
+  }
 }

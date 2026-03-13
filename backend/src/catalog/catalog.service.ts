@@ -39,7 +39,11 @@ export class CatalogService {
     const normalized = this.normalizeNullable(formula || '');
     if (!normalized) return null;
 
-    const withIf = normalized.replace(/\bse\s*\(/gi, 'if(');
+    const withIf = normalized
+      .replace(/\bse\s*\(/gi, 'if(')
+      .replace(/\bou\s*\(/gi, 'or(')
+      .replace(/\be\s*\(/gi, 'and(')
+      .replace(/;/g, ',');
     const withEq = withIf.replace(/(?<![<>=!])=(?!=)/g, '==');
     return withEq;
   }
@@ -601,6 +605,211 @@ export class CatalogService {
         },
       },
     });
+  }
+
+  private normalizeFieldAlias(label: string): string {
+    return label
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .toLowerCase();
+  }
+
+  private parseFormulaValue(value: unknown): string | number | boolean {
+    if (typeof value === 'number' || typeof value === 'boolean') return value;
+
+    const text = this.normalizeNullable(String(value ?? ''));
+    if (!text) return '';
+
+    const lower = text.toLowerCase();
+    if (lower === 'true') return true;
+    if (lower === 'false') return false;
+
+    const parsed = Number(text.replace(',', '.'));
+    if (!Number.isNaN(parsed)) return parsed;
+
+    return text;
+  }
+
+  private getFieldDefault(field: { defaultValue?: string | null; options?: unknown; type?: string }) {
+    if (field.defaultValue && this.normalizeNullable(field.defaultValue)) {
+      return this.parseFormulaValue(field.defaultValue);
+    }
+
+    if (field.type === 'SELECT' && Array.isArray(field.options) && field.options.length > 0) {
+      return this.parseFormulaValue(field.options[0]);
+    }
+
+    return '';
+  }
+
+  async validateAutoFormula(formula: string, context: Record<string, unknown> = {}) {
+    const normalized = this.normalizeFormulaExpression(formula);
+    if (!normalized) {
+      throw new BadRequestException('Formula vazia.');
+    }
+    this.validateFormulaExpression(normalized);
+
+    const original = this.normalizeNullable(formula);
+    const commands = new Set<string>();
+    if (/\bse\s*\(/i.test(original) || /\bif\s*\(/i.test(normalized)) commands.add('se()');
+    if (/\bou\s*\(/i.test(original) || /\bor\s*\(/i.test(normalized)) commands.add('ou()');
+    if (/\be\s*\(/i.test(original) || /\band\s*\(/i.test(normalized)) commands.add('e()');
+
+    const fields = await this.prisma.projectHeaderField.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+      select: {
+        id: true,
+        label: true,
+        type: true,
+        options: true,
+        defaultValue: true,
+      },
+    });
+
+    const fieldLookup = new Map<string, (typeof fields)[number]>();
+    for (const field of fields) {
+      const label = this.normalizeNullable(field.label);
+      const lower = label.toLowerCase();
+      const alias = this.normalizeFieldAlias(label);
+      const aliasRaw = label
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+      fieldLookup.set(field.id, field);
+      fieldLookup.set(label, field);
+      fieldLookup.set(lower, field);
+      if (alias) fieldLookup.set(alias, field);
+      if (aliasRaw) fieldLookup.set(aliasRaw, field);
+    }
+
+    const scope: Record<string, unknown> = {
+      if: (condition: unknown, whenTrue: unknown, whenFalse: unknown) => (condition ? whenTrue : whenFalse),
+      se: (condition: unknown, whenTrue: unknown, whenFalse: unknown) => (condition ? whenTrue : whenFalse),
+      and: (...args: unknown[]) => args.every((value) => Boolean(value)),
+      e: (...args: unknown[]) => args.every((value) => Boolean(value)),
+      or: (...args: unknown[]) => args.some((value) => Boolean(value)),
+      ou: (...args: unknown[]) => args.some((value) => Boolean(value)),
+    };
+
+    const resolveByField = (field: (typeof fields)[number]) => {
+      const ctxCandidates = [
+        field.id,
+        field.label,
+        field.label.toLowerCase(),
+        this.normalizeFieldAlias(field.label),
+        field.label
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-zA-Z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, ''),
+      ];
+
+      for (const key of ctxCandidates) {
+        if (key in context) {
+          return this.parseFormulaValue(context[key]);
+        }
+      }
+
+      return this.getFieldDefault(field);
+    };
+
+    const tokenBindings = new Map<string, unknown>();
+    let tokenIndex = 0;
+    const expressionWithTokens = normalized.replace(/\{\{\s*([^}]+)\s*\}\}/g, (_match, token) => {
+      const key = this.normalizeNullable(token);
+      const varName = `__token_${tokenIndex++}`;
+
+      const directField =
+        fieldLookup.get(key) ||
+        fieldLookup.get(key.toLowerCase()) ||
+        fieldLookup.get(this.normalizeFieldAlias(key));
+      if (directField) {
+        tokenBindings.set(varName, resolveByField(directField));
+      } else if (key in context) {
+        tokenBindings.set(varName, this.parseFormulaValue(context[key]));
+      } else {
+        tokenBindings.set(varName, '');
+      }
+
+      return varName;
+    });
+
+    tokenBindings.forEach((value, key) => {
+      scope[key] = value;
+    });
+
+    const ast = math.parse(expressionWithTokens);
+    const symbols = new Set<string>();
+    ast.traverse((node: any, _path: string, parent: any) => {
+      if (!node?.isSymbolNode) return;
+
+      const name = String(node.name || '');
+      if (!name) return;
+
+      const isFunctionNode = Boolean(parent?.isFunctionNode);
+      const isFunctionName = isFunctionNode && parent?.fn === node;
+      if (isFunctionName) return;
+
+      if (['true', 'false', 'pi', 'e', 'Infinity', 'NaN'].includes(name)) return;
+      if (name.startsWith('__token_')) return;
+
+      symbols.add(name);
+    });
+
+    const matchedFieldIds = new Set<string>();
+    const unknownSymbols: string[] = [];
+
+    for (const symbol of symbols) {
+      const field =
+        fieldLookup.get(symbol) ||
+        fieldLookup.get(symbol.toLowerCase()) ||
+        fieldLookup.get(this.normalizeFieldAlias(symbol));
+
+      if (field) {
+        matchedFieldIds.add(field.id);
+        scope[symbol] = resolveByField(field);
+        scope[this.normalizeFieldAlias(field.label)] = scope[symbol];
+        continue;
+      }
+
+      if (symbol in context) {
+        scope[symbol] = this.parseFormulaValue(context[symbol]);
+        continue;
+      }
+
+      unknownSymbols.push(symbol);
+    }
+
+    let result: unknown = null;
+    let evaluationError: string | null = null;
+
+    if (unknownSymbols.length === 0) {
+      try {
+        const compiled = math.compile(expressionWithTokens);
+        result = compiled.evaluate(scope as any);
+      } catch (error: any) {
+        evaluationError = error?.message || 'erro ao avaliar formula';
+      }
+    }
+
+    return {
+      isValid: unknownSymbols.length === 0 && !evaluationError,
+      normalizedExpression: normalized,
+      recognizedCommands: Array.from(commands),
+      recognizedFields: fields.filter((field) => matchedFieldIds.has(field.id)).map((field) => ({
+        id: field.id,
+        label: field.label,
+      })),
+      unknownSymbols,
+      canEvaluate: unknownSymbols.length === 0,
+      result,
+      error: evaluationError,
+    };
   }
 
   async removeEquipment(id: string) {

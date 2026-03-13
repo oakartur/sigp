@@ -20,6 +20,7 @@ import {
 } from '@mui/material';
 import { ArrowBack as ArrowBackIcon, AutoAwesome as AutoAwesomeIcon, Save as SaveIcon } from '@mui/icons-material';
 import { api } from '../context/AuthContext';
+import type { AxiosError } from 'axios';
 
 interface ProjectConfig {
   id: string;
@@ -88,7 +89,12 @@ export default function RequisitionGrid() {
       );
     } catch (error) {
       console.error('Failed to fetch requisition data', error);
-      alert('Erro ao carregar requisicao.');
+      const apiError = error as AxiosError<{ message?: string | string[] }>;
+      const backendMessage = apiError.response?.data?.message;
+      const errorMessage = Array.isArray(backendMessage)
+        ? backendMessage.join(' ')
+        : backendMessage || 'Erro ao carregar requisicao.';
+      alert(errorMessage);
     } finally {
       setLoading(false);
     }

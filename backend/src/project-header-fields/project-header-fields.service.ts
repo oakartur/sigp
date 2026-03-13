@@ -64,7 +64,11 @@ export class ProjectHeaderFieldsService {
     const value = this.normalizeString(formula);
     if (!value) return null;
 
-    const withIf = value.replace(/\bse\s*\(/gi, 'if(');
+    const withIf = value
+      .replace(/\bse\s*\(/gi, 'if(')
+      .replace(/\bou\s*\(/gi, 'or(')
+      .replace(/\be\s*\(/gi, 'and(')
+      .replace(/;/g, ',');
     return withIf.replace(/(?<![<>=!])=(?!=)/g, '==');
   }
 

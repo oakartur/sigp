@@ -35,7 +35,11 @@ export class RequisitionsService {
 
   private normalizeExpression(expression: string): string {
     const trimmed = this.normalizeText(expression);
-    const withIf = trimmed.replace(/\bse\s*\(/gi, 'if(');
+    const withIf = trimmed
+      .replace(/\bse\s*\(/gi, 'if(')
+      .replace(/\bou\s*\(/gi, 'or(')
+      .replace(/\be\s*\(/gi, 'and(')
+      .replace(/;/g, ',');
     return withIf.replace(/(?<![<>=!])=(?!=)/g, '==');
   }
 
@@ -92,6 +96,10 @@ export class RequisitionsService {
       if: (condition: unknown, whenTrue: unknown, whenFalse: unknown) => (condition ? whenTrue : whenFalse),
       SE: (condition: unknown, whenTrue: unknown, whenFalse: unknown) => (condition ? whenTrue : whenFalse),
       se: (condition: unknown, whenTrue: unknown, whenFalse: unknown) => (condition ? whenTrue : whenFalse),
+      and: (...args: unknown[]) => args.every((value) => Boolean(value)),
+      or: (...args: unknown[]) => args.some((value) => Boolean(value)),
+      E: (...args: unknown[]) => args.every((value) => Boolean(value)),
+      OU: (...args: unknown[]) => args.some((value) => Boolean(value)),
     } as any;
 
     const valuesByFieldId = new Map<string, string | number | boolean>();
@@ -103,7 +111,12 @@ export class RequisitionsService {
       const normalizedLower = rawValue.toLowerCase();
 
       let typedValue: string | number | boolean = rawValue;
-      if (numericValue !== null) {
+      if (
+        config.field.type === ProjectHeaderFieldType.NUMBER ||
+        config.field.type === ProjectHeaderFieldType.COMPUTED
+      ) {
+        typedValue = numericValue ?? 0;
+      } else if (numericValue !== null) {
         typedValue = numericValue;
       } else if (normalizedLower === 'true') {
         typedValue = true;
@@ -234,6 +247,7 @@ export class RequisitionsService {
     }
 
     const changed = new Map<string, string>();
+    const formulaErrors = new Map<string, string>();
 
     for (let pass = 0; pass < configs.length; pass++) {
       let hasChanges = false;
@@ -242,8 +256,18 @@ export class RequisitionsService {
         const formula = this.normalizeText(config.field.formulaExpression);
         if (!formula) continue;
 
-        const evaluated = this.evaluateExpression(formula, configs, `campo calculado '${config.field.label}'`);
-        const nextValue = this.serializeComputedValue(evaluated);
+        let nextValue = '';
+        try {
+          const evaluated = this.evaluateExpression(formula, configs, `campo calculado '${config.field.label}'`);
+          nextValue = this.serializeComputedValue(evaluated);
+          formulaErrors.delete(config.id);
+        } catch (error: any) {
+          const message = this.normalizeText(error?.message || '');
+          formulaErrors.set(config.id, message || 'erro de formula');
+          // Nao derruba a tela de requisicao por erro em um campo calculado.
+          continue;
+        }
+
         const currentValue = this.normalizeText(config.value);
 
         if (nextValue !== currentValue) {
@@ -263,6 +287,17 @@ export class RequisitionsService {
         where: { id: configId },
         data: { value },
       });
+    }
+
+    if (formulaErrors.size > 0) {
+      for (const config of computedConfigs) {
+        const errorMessage = formulaErrors.get(config.id);
+        if (!errorMessage) continue;
+        // Loga diagnostico sem interromper o fluxo.
+        console.error(
+          `[ProjectConfigFormula] requisition=${requisitionId} field=${config.field.label} error=${errorMessage}`,
+        );
+      }
     }
   }
 
