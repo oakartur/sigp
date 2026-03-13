@@ -82,6 +82,8 @@ export default function CatalogsConfig() {
   const [importing, setImporting] = useState(false);
   const [locals, setLocals] = useState<LocalCatalog[]>([]);
   const [headerFields, setHeaderFields] = useState<HeaderField[]>([]);
+  const [filterLocalId, setFilterLocalId] = useState('');
+  const [filterOperationId, setFilterOperationId] = useState('');
 
   const [localDialog, setLocalDialog] = useState<LocalDialogState>({ open: false, name: '' });
   const [operationDialog, setOperationDialog] = useState<OperationDialogState>({ open: false, name: '' });
@@ -111,6 +113,33 @@ export default function CatalogsConfig() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const operationOptions = locals
+    .flatMap((local) =>
+      local.operations.map((operation) => ({
+        id: operation.id,
+        name: operation.name,
+        localId: local.id,
+        localName: local.name,
+      })),
+    )
+    .filter((operation) => !filterLocalId || operation.localId === filterLocalId);
+
+  useEffect(() => {
+    if (!filterOperationId) return;
+    const operationStillValid = operationOptions.some((operation) => operation.id === filterOperationId);
+    if (!operationStillValid) {
+      setFilterOperationId('');
+    }
+  }, [filterOperationId, operationOptions]);
+
+  const filteredLocals = locals
+    .filter((local) => !filterLocalId || local.id === filterLocalId)
+    .map((local) => ({
+      ...local,
+      operations: local.operations.filter((operation) => !filterOperationId || operation.id === filterOperationId),
+    }))
+    .filter((local) => !filterOperationId || local.operations.length > 0);
 
   const saveLocal = async () => {
     if (!localDialog.name.trim()) return;
@@ -285,6 +314,51 @@ export default function CatalogsConfig() {
       </AppBar>
 
       <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+        <Paper sx={{ p: 2, mb: 2 }}>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+            <TextField
+              select
+              label="Filtrar por Local"
+              value={filterLocalId}
+              onChange={(e) => setFilterLocalId(e.target.value)}
+              sx={{ minWidth: 260 }}
+            >
+              <MenuItem value="">Todos</MenuItem>
+              {locals.map((local) => (
+                <MenuItem key={local.id} value={local.id}>
+                  {local.name}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              select
+              label="Filtrar por Operacao"
+              value={filterOperationId}
+              onChange={(e) => setFilterOperationId(e.target.value)}
+              sx={{ minWidth: 300 }}
+            >
+              <MenuItem value="">Todas</MenuItem>
+              {operationOptions.map((operation) => (
+                <MenuItem key={operation.id} value={operation.id}>
+                  {filterLocalId ? operation.name : `${operation.localName} / ${operation.name}`}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <Button
+              variant="text"
+              color="inherit"
+              onClick={() => {
+                setFilterLocalId('');
+                setFilterOperationId('');
+              }}
+            >
+              Limpar filtros
+            </Button>
+          </Box>
+        </Paper>
+
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
             <CircularProgress />
@@ -293,9 +367,13 @@ export default function CatalogsConfig() {
           <Paper sx={{ p: 4, textAlign: 'center' }}>
             <Typography color="text.secondary">Nenhum local cadastrado.</Typography>
           </Paper>
+        ) : filteredLocals.length === 0 ? (
+          <Paper sx={{ p: 4, textAlign: 'center' }}>
+            <Typography color="text.secondary">Nenhum resultado para os filtros selecionados.</Typography>
+          </Paper>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {locals.map((local) => (
+            {filteredLocals.map((local) => (
               <Paper key={local.id} sx={{ p: 2 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                   <Typography variant="h6">{local.name}</Typography>

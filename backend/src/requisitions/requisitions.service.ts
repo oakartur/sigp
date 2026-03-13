@@ -73,7 +73,13 @@ export class RequisitionsService {
     });
   }
 
-  private async createItemsFromCatalog(tx: Prisma.TransactionClient, requisitionId: string) {
+  private async syncCatalogItemsForRequisition(tx: Prisma.TransactionClient, requisitionId: string) {
+    const requisition = await tx.requisition.findUnique({
+      where: { id: requisitionId },
+      select: { id: true },
+    });
+    if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
+
     const equipments = await tx.equipmentCatalog.findMany({
       where: {
         isActive: true,
@@ -93,18 +99,37 @@ export class RequisitionsService {
 
     if (equipments.length === 0) return;
 
-    const orderedEquipments = [...equipments].sort((a, b) => {
-      if (a.operation.local.sortOrder !== b.operation.local.sortOrder) {
-        return a.operation.local.sortOrder - b.operation.local.sortOrder;
-      }
-      if (a.operation.sortOrder !== b.operation.sortOrder) {
-        return a.operation.sortOrder - b.operation.sortOrder;
-      }
-      return a.sortOrder - b.sortOrder;
+    const existingItems = await tx.requisitionItem.findMany({
+      where: {
+        requisitionId,
+        equipmentCatalogId: { not: null },
+      },
+      select: {
+        equipmentCatalogId: true,
+      },
     });
+    const existingCatalogIds = new Set(
+      existingItems
+        .map((item) => item.equipmentCatalogId)
+        .filter((catalogId): catalogId is string => Boolean(catalogId)),
+    );
+
+    const missingEquipments = equipments
+      .filter((equipment) => !existingCatalogIds.has(equipment.id))
+      .sort((a, b) => {
+        if (a.operation.local.sortOrder !== b.operation.local.sortOrder) {
+          return a.operation.local.sortOrder - b.operation.local.sortOrder;
+        }
+        if (a.operation.sortOrder !== b.operation.sortOrder) {
+          return a.operation.sortOrder - b.operation.sortOrder;
+        }
+        return a.sortOrder - b.sortOrder;
+      });
+
+    if (missingEquipments.length === 0) return;
 
     await tx.requisitionItem.createMany({
-      data: orderedEquipments.map((equipment) => ({
+      data: missingEquipments.map((equipment) => ({
         requisitionId,
         equipmentCatalogId: equipment.id,
         localName: equipment.operation.local.name,
@@ -134,7 +159,7 @@ export class RequisitionsService {
       });
 
       await this.syncProjectConfigs(tx, requisition.id);
-      await this.createItemsFromCatalog(tx, requisition.id);
+      await this.syncCatalogItemsForRequisition(tx, requisition.id);
       return requisition;
     });
   }
@@ -199,10 +224,9 @@ export class RequisitionsService {
             status: 'PENDING' as const,
           })),
         });
-      } else {
-        await this.createItemsFromCatalog(tx, newReq.id);
       }
 
+      await this.syncCatalogItemsForRequisition(tx, newReq.id);
       await this.syncProjectConfigs(tx, newReq.id, req.id);
       return newReq;
     });
@@ -227,16 +251,19 @@ export class RequisitionsService {
   }
 
   async findItems(reqId: string) {
-    return this.prisma.requisitionItem.findMany({
-      where: { requisitionId: reqId },
-      include: {
-        equipmentCatalog: {
-          include: {
-            autoConfigField: { select: { id: true, label: true } },
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await this.syncCatalogItemsForRequisition(tx, reqId);
+      return tx.requisitionItem.findMany({
+        where: { requisitionId: reqId },
+        include: {
+          equipmentCatalog: {
+            include: {
+              autoConfigField: { select: { id: true, label: true } },
+            },
           },
         },
-      },
-      orderBy: [{ localName: 'asc' }, { operationName: 'asc' }, { equipmentName: 'asc' }],
+        orderBy: [{ localName: 'asc' }, { operationName: 'asc' }, { equipmentName: 'asc' }],
+      });
     });
   }
 
@@ -288,6 +315,10 @@ export class RequisitionsService {
     if (requisition.isReadOnly) {
       throw new BadRequestException('Requisicao em modo somente leitura.');
     }
+
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await this.syncCatalogItemsForRequisition(tx, reqId);
+    });
 
     const configs = await this.prisma.requisitionProjectConfig.findMany({
       where: { requisitionId: reqId },
