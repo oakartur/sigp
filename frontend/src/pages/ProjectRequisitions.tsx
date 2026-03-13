@@ -1,34 +1,35 @@
-import { useState, useEffect, useContext } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useContext, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Box,
-  Typography,
-  Container,
-  Paper,
-  Button,
   AppBar,
-  Toolbar,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
+  Paper,
+  Stack,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Chip,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   TextField,
+  Toolbar,
   Tooltip,
+  Typography,
 } from '@mui/material';
 import {
-  ArrowBack as ArrowBackIcon,
   Add as AddIcon,
-  FileCopy as SnapshotIcon,
+  ArrowBack as ArrowBackIcon,
   Edit as EditIcon,
+  FileCopy as SnapshotIcon,
 } from '@mui/icons-material';
 import { AuthContext, api } from '../context/AuthContext';
 
@@ -46,7 +47,7 @@ export default function ProjectRequisitions() {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
 
-  const [projectName, setProjectName] = useState('Carregando Projeto...');
+  const [projectName, setProjectName] = useState('Carregando projeto...');
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -62,6 +63,8 @@ export default function ProjectRequisitions() {
   const [editingReqId, setEditingReqId] = useState<string | null>(null);
   const [editingVersion, setEditingVersion] = useState('');
 
+  const isAdminOrQuantifier = user?.role === 'ADMIN' || user?.role === 'QUANTIFIER';
+
   useEffect(() => {
     fetchData();
   }, [projectId]);
@@ -71,14 +74,24 @@ export default function ProjectRequisitions() {
     setCreateVersion(`V${requisitions.length + 1}`);
   }, [createDialogOpen, requisitions.length]);
 
+  const sortedRequisitions = useMemo(
+    () => [...requisitions].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()),
+    [requisitions],
+  );
+
+  const completedCount = useMemo(
+    () => requisitions.filter((requisition) => requisition.status === 'COMPLETED').length,
+    [requisitions],
+  );
+
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await api.get(`/projects/${projectId}`);
-      setProjectName(res.data.name);
-      setRequisitions(res.data.requisitions || []);
-    } catch (err) {
-      console.error('Failed to fetch project details', err);
+      const response = await api.get(`/projects/${projectId}`);
+      setProjectName(response.data.name);
+      setRequisitions(response.data.requisitions || []);
+    } catch (error) {
+      console.error('Failed to fetch project details', error);
       setProjectName('Projeto nao encontrado');
     } finally {
       setLoading(false);
@@ -87,15 +100,16 @@ export default function ProjectRequisitions() {
 
   const handleCreateRequisition = async () => {
     if (!createVersion.trim()) return;
+
     try {
       setActionLoading(true);
       await api.post(`/requisitions/project/${projectId}`, { version: createVersion.trim() });
       setCreateDialogOpen(false);
       setCreateVersion('');
       await fetchData();
-    } catch (err) {
-      console.error('Failed to create requisition', err);
-      alert('Erro ao criar requisicao');
+    } catch (error) {
+      console.error('Failed to create requisition', error);
+      alert('Erro ao criar requisicao.');
     } finally {
       setActionLoading(false);
     }
@@ -109,6 +123,7 @@ export default function ProjectRequisitions() {
 
   const handleCreateSnapshot = async () => {
     if (!cloneSourceReqId || !cloneVersion.trim()) return;
+
     try {
       setActionLoading(true);
       await api.post(`/requisitions/${cloneSourceReqId}/snapshot`, { version: cloneVersion.trim() });
@@ -116,22 +131,23 @@ export default function ProjectRequisitions() {
       setCloneSourceReqId(null);
       setCloneVersion('');
       await fetchData();
-    } catch (err) {
-      console.error('Failed to create snapshot', err);
-      alert('Erro ao criar nova versao clonada');
+    } catch (error) {
+      console.error('Failed to create snapshot', error);
+      alert('Erro ao clonar versao.');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const openEditVersionDialog = (req: Requisition) => {
-    setEditingReqId(req.id);
-    setEditingVersion(req.version || '');
+  const openEditVersionDialog = (requisition: Requisition) => {
+    setEditingReqId(requisition.id);
+    setEditingVersion(requisition.version || '');
     setEditDialogOpen(true);
   };
 
   const handleUpdateVersion = async () => {
     if (!editingReqId || !editingVersion.trim()) return;
+
     try {
       setActionLoading(true);
       await api.put(`/requisitions/${editingReqId}/version`, { version: editingVersion.trim() });
@@ -139,150 +155,158 @@ export default function ProjectRequisitions() {
       setEditingReqId(null);
       setEditingVersion('');
       await fetchData();
-    } catch (err) {
-      console.error('Failed to update version', err);
-      alert('Erro ao editar versao');
+    } catch (error) {
+      console.error('Failed to update version', error);
+      alert('Erro ao atualizar versao.');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'PENDING':
-        return 'default';
-      case 'FILLING':
-        return 'primary';
-      case 'COMPLETED':
-        return 'success';
-      default:
-        return 'default';
-    }
+  const getStatusColor = (status: Requisition['status']) => {
+    if (status === 'COMPLETED') return 'success';
+    if (status === 'FILLING') return 'primary';
+    return 'default';
   };
 
-  const isAdminOrQuantifier = user?.role === 'ADMIN' || user?.role === 'QUANTIFIER';
-
   return (
-    <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: 'background.default' }}>
-      <AppBar
-        position="static"
-        elevation={0}
-        sx={{ borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}
-      >
+    <Box sx={{ minHeight: '100vh' }}>
+      <AppBar position="sticky" elevation={0}>
         <Toolbar>
-          <IconButton edge="start" color="inherit" onClick={() => navigate('/')} sx={{ mr: 2 }}>
+          <IconButton edge="start" color="primary" onClick={() => navigate('/')} sx={{ mr: 1 }}>
             <ArrowBackIcon />
           </IconButton>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
             {projectName}
           </Typography>
         </Toolbar>
       </AppBar>
 
-      <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h5" fontWeight={700}>
-            Requisicoes e Versoes
-          </Typography>
+      <Container maxWidth="xl" sx={{ py: 3 }}>
+        <Paper sx={{ p: { xs: 2, md: 3 }, mb: 2.5 }}>
+          <Stack
+            direction={{ xs: 'column', lg: 'row' }}
+            justifyContent="space-between"
+            alignItems={{ xs: 'flex-start', lg: 'center' }}
+            spacing={2}
+          >
+            <Box>
+              <Typography variant="h5" sx={{ mb: 0.25 }}>
+                Requisicoes e versoes
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Controle de versao da requisicao para cada etapa do projeto.
+              </Typography>
+            </Box>
 
-          {isAdminOrQuantifier && (
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => setCreateDialogOpen(true)}
-              disabled={actionLoading}
-            >
-              Nova Requisicao
-            </Button>
-          )}
-        </Box>
+            {isAdminOrQuantifier && (
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => setCreateDialogOpen(true)}
+                disabled={actionLoading}
+              >
+                Nova requisicao
+              </Button>
+            )}
+          </Stack>
+
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ mt: 2 }}>
+            <Chip label={`Versoes: ${requisitions.length}`} variant="outlined" color="primary" />
+            <Chip label={`Concluidas: ${completedCount}`} variant="outlined" color="success" />
+            <Chip label={`Em preenchimento: ${requisitions.length - completedCount}`} variant="outlined" />
+          </Stack>
+        </Paper>
 
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 5 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
             <CircularProgress />
           </Box>
-        ) : requisitions.length === 0 ? (
-          <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 2 }}>
-            <Typography color="text.secondary">Nenhuma requisicao iniciada para este projeto.</Typography>
+        ) : sortedRequisitions.length === 0 ? (
+          <Paper sx={{ p: 5, textAlign: 'center' }}>
+            <Typography variant="h6" sx={{ mb: 0.5 }}>
+              Nenhuma requisicao para este projeto
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Crie a primeira versao para iniciar o levantamento de material.
+            </Typography>
           </Paper>
         ) : (
-          <TableContainer component={Paper} elevation={3} sx={{ borderRadius: 2 }}>
+          <TableContainer component={Paper}>
             <Table>
-              <TableHead sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
+              <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Versao</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Modo</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                    Acoes
-                  </TableCell>
+                  <TableCell>Versao</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Modo</TableCell>
+                  <TableCell>Criada em</TableCell>
+                  <TableCell align="right">Acoes</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {[...requisitions]
-                  .sort(
-                    (a, b) =>
-                      new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
-                  )
-                  .map((req) => (
-                    <TableRow key={req.id} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
-                      <TableCell>
-                        <Typography fontWeight="bold" color="primary.light">
-                          {req.version}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={req.status}
-                          color={getStatusColor(req.status) as any}
-                          size="small"
-                          variant={req.isReadOnly ? 'outlined' : 'filled'}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        {req.isReadOnly ? (
-                          <Typography variant="body2" color="error.light">
-                            Somente Leitura
-                          </Typography>
-                        ) : (
-                          <Typography variant="body2" color="success.light">
-                            Permite Edicao
-                          </Typography>
+                {sortedRequisitions.map((requisition) => (
+                  <TableRow
+                    key={requisition.id}
+                    hover
+                    sx={{
+                      '& td': {
+                        borderColor: 'divider',
+                      },
+                    }}
+                  >
+                    <TableCell>
+                      <Typography sx={{ fontWeight: 700, fontFamily: '"IBM Plex Mono", monospace' }}>
+                        {requisition.version}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        label={requisition.status}
+                        color={getStatusColor(requisition.status) as any}
+                        variant={requisition.isReadOnly ? 'outlined' : 'filled'}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        label={requisition.isReadOnly ? 'Somente leitura' : 'Editavel'}
+                        color={requisition.isReadOnly ? 'default' : 'secondary'}
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {new Date(requisition.createdAt).toLocaleString('pt-BR')}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Stack direction="row" spacing={1} justifyContent="flex-end">
+                        {isAdminOrQuantifier && (
+                          <>
+                            <Tooltip title="Editar versao">
+                              <IconButton size="small" color="primary" onClick={() => openEditVersionDialog(requisition)}>
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              startIcon={<SnapshotIcon />}
+                              onClick={() => openCloneDialog(requisition.id)}
+                              disabled={actionLoading}
+                            >
+                              Clonar
+                            </Button>
+                          </>
                         )}
-                      </TableCell>
-                      <TableCell align="right">
-                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-                          {isAdminOrQuantifier && (
-                            <>
-                              <Tooltip title="Editar versao">
-                                <IconButton size="small" color="primary" onClick={() => openEditVersionDialog(req)}>
-                                  <EditIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                              <Button
-                                variant="outlined"
-                                size="small"
-                                color="secondary"
-                                startIcon={<SnapshotIcon />}
-                                onClick={() => openCloneDialog(req.id)}
-                                disabled={actionLoading}
-                              >
-                                Clonar Versao
-                              </Button>
-                            </>
-                          )}
-                          <Button
-                            variant="contained"
-                            size="small"
-                            color="primary"
-                            onClick={() => navigate(`/requisition/${req.id}`)}
-                          >
-                            Abrir Itens
-                          </Button>
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        <Button variant="contained" size="small" onClick={() => navigate(`/requisition/${requisition.id}`)}>
+                          Abrir
+                        </Button>
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </TableContainer>
@@ -290,7 +314,7 @@ export default function ProjectRequisitions() {
       </Container>
 
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Nova Requisicao</DialogTitle>
+        <DialogTitle>Nova requisicao</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -298,11 +322,11 @@ export default function ProjectRequisitions() {
             margin="dense"
             label="Versao"
             value={createVersion}
-            onChange={(e) => setCreateVersion(e.target.value)}
+            onChange={(event) => setCreateVersion(event.target.value)}
             sx={{ mt: 1 }}
           />
         </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 0 }}>
+        <DialogActions sx={{ p: 2.5 }}>
           <Button color="inherit" onClick={() => setCreateDialogOpen(false)}>
             Cancelar
           </Button>
@@ -313,7 +337,7 @@ export default function ProjectRequisitions() {
       </Dialog>
 
       <Dialog open={cloneDialogOpen} onClose={() => setCloneDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Clonar Requisicao</DialogTitle>
+        <DialogTitle>Clonar requisicao</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -321,11 +345,11 @@ export default function ProjectRequisitions() {
             margin="dense"
             label="Nova versao"
             value={cloneVersion}
-            onChange={(e) => setCloneVersion(e.target.value)}
+            onChange={(event) => setCloneVersion(event.target.value)}
             sx={{ mt: 1 }}
           />
         </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 0 }}>
+        <DialogActions sx={{ p: 2.5 }}>
           <Button color="inherit" onClick={() => setCloneDialogOpen(false)}>
             Cancelar
           </Button>
@@ -336,7 +360,7 @@ export default function ProjectRequisitions() {
       </Dialog>
 
       <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Editar Versao</DialogTitle>
+        <DialogTitle>Editar versao</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -344,11 +368,11 @@ export default function ProjectRequisitions() {
             margin="dense"
             label="Versao"
             value={editingVersion}
-            onChange={(e) => setEditingVersion(e.target.value)}
+            onChange={(event) => setEditingVersion(event.target.value)}
             sx={{ mt: 1 }}
           />
         </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 0 }}>
+        <DialogActions sx={{ p: 2.5 }}>
           <Button color="inherit" onClick={() => setEditDialogOpen(false)}>
             Cancelar
           </Button>

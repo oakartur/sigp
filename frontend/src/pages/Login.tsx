@@ -1,150 +1,155 @@
-import { useState, useContext } from 'react';
+import { useContext, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Box, 
-  Button, 
-  TextField, 
-  Typography, 
-  Container, 
+import {
+  Alert,
+  Box,
+  Button,
+  Container,
   Paper,
-  Alert
+  TextField,
+  Typography,
+  Chip,
+  Stack,
 } from '@mui/material';
 import { AuthContext, api } from '../context/AuthContext';
+
+function decodeTokenPayload(token: string) {
+  const base64Url = token.split('.')[1];
+  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+  const jsonPayload = decodeURIComponent(
+    atob(base64)
+      .split('')
+      .map((char) => `%${(`00${char.charCodeAt(0).toString(16)}`).slice(-2)}`)
+      .join(''),
+  );
+  return JSON.parse(jsonPayload);
+}
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  
+
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError('');
     setLoading(true);
 
     try {
       const response = await api.post('/auth/login', { email, password });
-      
-      // A API retorna o access_token e possivelmente os dados do usuário.
-      // O backend do NestJS tipicamente retorna: { access_token: "..." }
-      // Precisamos decodificar ou pelo menos assumir o role se não vier.
-      // O auth.service do backend retorna: { access_token: string }
-      
       const token = response.data.access_token;
-      
-      // Decodificando JWT básico no frontend apenas para pegar os dados do payload, 
-      // ou fazendo uma requisição extra se existisse um endpoint /users/me.
-      // Vamos assumir que o payload do JWT tem { sub, email, role } como configurado no backend
-      try {
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        }).join(''));
 
-        const payload = JSON.parse(jsonPayload);
-        
-        const userData = {
+      try {
+        const payload = decodeTokenPayload(token);
+        login(token, {
           id: payload.sub,
           email: payload.email,
-          role: payload.role
-        };
-        
-        login(token, userData);
-        navigate('/');
-        
-      } catch (decodeErr) {
-        console.error("Erro ao decodificar token", decodeErr);
-        // Fallback genérico caso a decodificação falhe
+          role: payload.role,
+        });
+      } catch {
         login(token, { id: 'unknown', email, role: 'QUANTIFIER' });
-        navigate('/');
       }
-      
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Falha ao fazer login. Verifique as credenciais.');
+
+      navigate('/');
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || 'Falha no login. Verifique email e senha.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Box 
-      sx={{ 
-        minHeight: '100vh', 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, #121212 0%, #1a1a2e 100%)'
-      }}
-    >
-      <Container maxWidth="xs">
-        <Paper 
-          elevation={6} 
-          sx={{ 
-            p: 4, 
-            display: 'flex', 
-            flexDirection: 'column', 
-            alignItems: 'center',
-            borderRadius: 3,
-            borderTop: '4px solid',
-            borderColor: 'primary.main',
-            bgcolor: 'background.paper',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
-          }}
-        >
-          <Typography component="h1" variant="h4" sx={{ mb: 3, fontWeight: 700, color: 'white' }}>
-            SIGP
-          </Typography>
-          <Typography variant="body2" sx={{ mb: 3, color: 'text.secondary', textAlign: 'center' }}>
-            Sistema de Quantificação e Recebimento
-          </Typography>
-
-          {error && (
-            <Alert severity="error" sx={{ width: '100%', mb: 2 }}>
-              {error}
-            </Alert>
-          )}
-
-          <Box component="form" onSubmit={handleLogin} sx={{ mt: 1, width: '100%' }}>
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="email"
-              label="E-mail"
-              name="email"
-              autoComplete="email"
-              autoFocus
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              variant="outlined"
-            />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="password"
-              label="Senha"
-              type="password"
-              id="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              variant="outlined"
-            />
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              color="primary"
-              disabled={loading}
-              sx={{ mt: 4, mb: 2, py: 1.5, fontWeight: 600, borderRadius: 2 }}
+    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', py: 4 }}>
+      <Container maxWidth="lg">
+        <Paper sx={{ overflow: 'hidden', borderRadius: 3 }}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: '1.2fr 1fr' },
+              minHeight: { md: 560 },
+            }}
+          >
+            <Box
+              sx={{
+                p: { xs: 3, md: 5 },
+                background:
+                  'linear-gradient(150deg, rgba(11,95,255,1) 0%, rgba(12,57,133,1) 45%, rgba(15,118,110,1) 100%)',
+                color: '#E6EEF8',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                gap: 3,
+              }}
             >
-              {loading ? 'Entrando...' : 'Entrar'}
-            </Button>
+              <Box>
+                <Typography variant="h4" sx={{ color: '#FFFFFF', mb: 1 }}>
+                  SIGP
+                </Typography>
+                <Typography variant="body1" sx={{ opacity: 0.95, maxWidth: 520 }}>
+                  Plataforma de levantamento de material para projetos de redes, infraestrutura e CFTV.
+                </Typography>
+              </Box>
+
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Chip label="Catalogo tecnico" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#FFFFFF' }} />
+                <Chip label="Versionamento" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#FFFFFF' }} />
+                <Chip label="Rastreabilidade" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#FFFFFF' }} />
+              </Stack>
+
+              <Typography variant="body2" sx={{ opacity: 0.85 }}>
+                Use sua conta corporativa para acessar os projetos.
+              </Typography>
+            </Box>
+
+            <Box sx={{ p: { xs: 3, md: 5 }, display: 'flex', alignItems: 'center' }}>
+              <Box component="form" onSubmit={handleLogin} sx={{ width: '100%' }}>
+                <Typography variant="h5" sx={{ mb: 1 }}>
+                  Entrar
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                  Preencha as credenciais para abrir o painel de projetos.
+                </Typography>
+
+                {error && (
+                  <Alert severity="error" sx={{ mb: 2 }}>
+                    {error}
+                  </Alert>
+                )}
+
+                <TextField
+                  margin="normal"
+                  required
+                  fullWidth
+                  id="email"
+                  label="E-mail"
+                  name="email"
+                  autoComplete="email"
+                  autoFocus
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+                <TextField
+                  margin="normal"
+                  required
+                  fullWidth
+                  name="password"
+                  label="Senha"
+                  type="password"
+                  id="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+
+                <Button type="submit" fullWidth variant="contained" disabled={loading} sx={{ mt: 3, py: 1.25 }}>
+                  {loading ? 'Entrando...' : 'Acessar sistema'}
+                </Button>
+              </Box>
+            </Box>
           </Box>
         </Paper>
       </Container>
