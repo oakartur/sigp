@@ -1,12 +1,12 @@
 import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Box, 
-  Typography, 
-  Container, 
-  Card, 
-  CardContent, 
-  CardActions, 
+import {
+  Box,
+  Typography,
+  Container,
+  Card,
+  CardContent,
+  CardActions,
   Button,
   AppBar,
   Toolbar,
@@ -16,9 +16,15 @@ import {
   DialogContent,
   DialogActions,
   TextField,
-  CircularProgress
+  CircularProgress,
+  Tooltip,
 } from '@mui/material';
-import { Add as AddIcon, Logout as LogoutIcon, FolderOpen as FolderIcon, Settings as SettingsIcon } from '@mui/icons-material';
+import {
+  Add as AddIcon,
+  Logout as LogoutIcon,
+  FolderOpen as FolderIcon,
+  Settings as SettingsIcon,
+} from '@mui/icons-material';
 import { AuthContext, api } from '../context/AuthContext';
 
 interface Project {
@@ -29,10 +35,10 @@ interface Project {
 export default function Dashboard() {
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
-  
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Modal state
   const [openModal, setOpenModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -56,7 +62,7 @@ export default function Dashboard() {
 
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) return;
-    
+
     try {
       setCreating(true);
       await api.post('/projects', { name: newProjectName });
@@ -80,9 +86,17 @@ export default function Dashboard() {
 
   return (
     <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: 'background.default' }}>
-      <AppBar position="static" elevation={0} sx={{ borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
+      <AppBar
+        position="static"
+        elevation={0}
+        sx={{ borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}
+      >
         <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold', color: 'primary.main' }}>
+          <Typography
+            variant="h6"
+            component="div"
+            sx={{ flexGrow: 1, fontWeight: 'bold', color: 'primary.main' }}
+          >
             SIGP Dashboard
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -90,9 +104,23 @@ export default function Dashboard() {
               {user?.email} ({user?.role})
             </Typography>
             {user?.role === 'ADMIN' && (
-              <IconButton color="primary" onClick={() => navigate('/settings/header-fields')} title="Configurações">
-                <SettingsIcon />
-              </IconButton>
+              <>
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  onClick={() => navigate('/settings/project')}
+                  sx={{ borderRadius: 2 }}
+                >
+                  Configurações de Projeto
+                </Button>
+                <Tooltip title="Configurações de sistema (em breve)">
+                  <span>
+                    <IconButton color="primary" disabled>
+                      <SettingsIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </>
             )}
             <IconButton color="secondary" onClick={handleLogout} title="Sair">
               <LogoutIcon />
@@ -107,8 +135,8 @@ export default function Dashboard() {
             Meus Projetos
           </Typography>
           {isAdminOrQuantifier && (
-            <Button 
-              variant="contained" 
+            <Button
+              variant="contained"
               startIcon={<AddIcon />}
               onClick={() => setOpenModal(true)}
               sx={{ borderRadius: 2 }}
@@ -135,17 +163,17 @@ export default function Dashboard() {
         ) : (
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
             {projects.map((project) => (
-              <Box 
-                key={project.id} 
-                sx={{ 
-                  width: { xs: '100%', sm: 'calc(50% - 12px)', md: 'calc(33.333% - 16px)' } 
+              <Box
+                key={project.id}
+                sx={{
+                  width: { xs: '100%', sm: 'calc(50% - 12px)', md: 'calc(33.333% - 16px)' },
                 }}
               >
-                <Card 
+                <Card
                   elevation={2}
-                  sx={{ 
-                    height: '100%', 
-                    display: 'flex', 
+                  sx={{
+                    height: '100%',
+                    display: 'flex',
                     flexDirection: 'column',
                     transition: 'transform 0.2s, box-shadow 0.2s',
                     '&:hover': {
@@ -153,8 +181,8 @@ export default function Dashboard() {
                       boxShadow: 6,
                       borderColor: 'primary.main',
                       borderWidth: 1,
-                      borderStyle: 'solid'
-                    }
+                      borderStyle: 'solid',
+                    },
                   }}
                 >
                   <CardContent sx={{ flexGrow: 1 }}>
@@ -166,9 +194,9 @@ export default function Dashboard() {
                     </Typography>
                   </CardContent>
                   <CardActions sx={{ p: 2, pt: 0 }}>
-                    <Button 
-                      size="small" 
-                      color="primary" 
+                    <Button
+                      size="small"
+                      color="primary"
                       variant="outlined"
                       fullWidth
                       onClick={() => navigate(`/project/${project.id}`)}
@@ -200,12 +228,10 @@ export default function Dashboard() {
           />
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 0 }}>
-          <Button onClick={() => setOpenModal(false)} color="inherit">Cancelar</Button>
-          <Button 
-            onClick={handleCreateProject} 
-            variant="contained" 
-            disabled={!newProjectName.trim() || creating}
-          >
+          <Button onClick={() => setOpenModal(false)} color="inherit">
+            Cancelar
+          </Button>
+          <Button onClick={handleCreateProject} variant="contained" disabled={!newProjectName.trim() || creating}>
             {creating ? 'Criando...' : 'Criar'}
           </Button>
         </DialogActions>

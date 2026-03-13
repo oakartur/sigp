@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+﻿import { useState, useEffect, useContext } from 'react';
 import type { AxiosError } from 'axios';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -148,7 +148,7 @@ export default function ProjectHeaderConfig() {
     try {
       setDeleting(true);
       await api.delete(`/project-header-fields/${deletingField.id}`);
-      showSnackbar('Campo excluído com sucesso!', 'success');
+      showSnackbar('Campo excluÃ­do com sucesso!', 'success');
       setDeleteDialogOpen(false);
       setDeletingField(null);
       fetchFields();
@@ -203,7 +203,7 @@ export default function ProjectHeaderConfig() {
             <ArrowBackIcon />
           </IconButton>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold', color: 'primary.main' }}>
-            Configuração – Campos do Cabeçalho
+            Configurações de Projeto
           </Typography>
         </Toolbar>
       </AppBar>
@@ -211,7 +211,7 @@ export default function ProjectHeaderConfig() {
       <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h5" fontWeight={700}>
-            Campos do Cabeçalho (Aba Geral)
+            Configurações de Projeto
           </Typography>
           {isAdmin && (
             <Button variant="contained" startIcon={<AddIcon />} onClick={openCreateDialog} sx={{ borderRadius: 2 }}>
@@ -227,7 +227,7 @@ export default function ProjectHeaderConfig() {
         ) : fields.length === 0 ? (
           <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 2 }}>
             <Typography color="text.secondary">
-              Nenhum campo configurado. Clique em "Novo Campo" para adicionar.
+              Nenhuma configuração cadastrada. Clique em "Novo Campo" para adicionar.
             </Typography>
           </Paper>
         ) : (
@@ -251,7 +251,7 @@ export default function ProjectHeaderConfig() {
                         Ordem
                       </TableCell>
                       <TableCell align="right" sx={{ fontWeight: 'bold', width: 120 }}>
-                        Ações
+                        AÃ§Ãµes
                       </TableCell>
                     </>
                   )}
@@ -354,15 +354,15 @@ export default function ProjectHeaderConfig() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog Confirmar Exclusão */}
+      {/* Dialog Confirmar ExclusÃ£o */}
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Confirmar Exclusão</DialogTitle>
+        <DialogTitle>Confirmar ExclusÃ£o</DialogTitle>
         <DialogContent>
           <Typography>
             Tem certeza que deseja excluir o campo <strong>"{deletingField?.label}"</strong>?
           </Typography>
           <Typography variant="body2" color="error.light" sx={{ mt: 1 }}>
-            Esta ação não pode ser desfeita.
+            Esta aÃ§Ã£o nÃ£o pode ser desfeita.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 0 }}>
@@ -394,3 +394,4 @@ export default function ProjectHeaderConfig() {
     </Box>
   );
 }
+

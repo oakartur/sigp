@@ -64,13 +64,22 @@ function App() {
               } 
             />
 
-            <Route 
-              path="/settings/header-fields" 
+            <Route
+              path="/settings/project"
               element={
                 <PrivateRoute>
                   <ProjectHeaderConfig />
                 </PrivateRoute>
-              } 
+              }
+            />
+
+            <Route
+              path="/settings/header-fields"
+              element={
+                <PrivateRoute>
+                  <ProjectHeaderConfig />
+                </PrivateRoute>
+              }
             />
             
             <Route path="*" element={<Navigate to="/" />} />
@@ -82,4 +91,3 @@ function App() {
 }
 
 export default App;
-
