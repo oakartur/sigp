@@ -93,6 +93,7 @@ model ProjectHeaderField {
   createdAt          DateTime                   @default(now())
   updatedAt          DateTime                   @updatedAt
   requisitionConfigs RequisitionProjectConfig[]
+  autoEquipments     EquipmentCatalog[]
 }
 
 model RequisitionProjectConfig {
