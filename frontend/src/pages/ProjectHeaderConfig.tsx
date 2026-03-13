@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react';
+import type { AxiosError } from 'axios';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -120,7 +121,12 @@ export default function ProjectHeaderConfig() {
       fetchFields();
     } catch (err) {
       console.error('Failed to save field', err);
-      showSnackbar('Erro ao salvar campo', 'error');
+      const apiError = err as AxiosError<{ message?: string | string[] }>;
+      const backendMessage = apiError.response?.data?.message;
+      const errorMessage = Array.isArray(backendMessage)
+        ? backendMessage.join(' ')
+        : backendMessage || 'Erro ao salvar campo';
+      showSnackbar(errorMessage, 'error');
     } finally {
       setSaving(false);
     }

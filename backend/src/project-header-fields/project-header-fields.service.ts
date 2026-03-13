@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -12,33 +18,67 @@ export class ProjectHeaderFieldsService {
   }
 
   async create(data: { label: string }) {
-    // Atribui sortOrder = max + 1
-    const maxField = await this.prisma.projectHeaderField.findFirst({
-      orderBy: { sortOrder: 'desc' },
-    });
-    const nextOrder = (maxField?.sortOrder ?? -1) + 1;
+    const label = data?.label?.trim();
+    if (!label) {
+      throw new BadRequestException('Nome do campo e obrigatorio.');
+    }
 
-    return this.prisma.projectHeaderField.create({
-      data: {
-        label: data.label,
-        sortOrder: nextOrder,
-      },
+    const existingField = await this.prisma.projectHeaderField.findFirst({
+      where: { label: { equals: label, mode: 'insensitive' } },
     });
+    if (existingField) {
+      throw new ConflictException('Ja existe um campo com esse nome.');
+    }
+
+    const maxOrderResult = await this.prisma.projectHeaderField.aggregate({
+      _max: { sortOrder: true },
+    });
+    const nextOrder = (maxOrderResult._max.sortOrder ?? -1) + 1;
+
+    try {
+      return await this.prisma.projectHeaderField.create({
+        data: {
+          label,
+          sortOrder: nextOrder,
+          isActive: true,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Ja existe um campo com esse nome.');
+      }
+      throw error;
+    }
   }
 
   async update(id: string, data: { label?: string; isActive?: boolean }) {
     const existing = await this.prisma.projectHeaderField.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('Campo não encontrado');
+    if (!existing) throw new NotFoundException('Campo nao encontrado');
 
-    return this.prisma.projectHeaderField.update({
-      where: { id },
-      data,
-    });
+    const normalizedData = { ...data };
+    if (typeof normalizedData.label === 'string') {
+      normalizedData.label = normalizedData.label.trim();
+      if (!normalizedData.label) {
+        throw new BadRequestException('Nome do campo e obrigatorio.');
+      }
+    }
+
+    try {
+      return await this.prisma.projectHeaderField.update({
+        where: { id },
+        data: normalizedData,
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Ja existe um campo com esse nome.');
+      }
+      throw error;
+    }
   }
 
   async remove(id: string) {
     const existing = await this.prisma.projectHeaderField.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('Campo não encontrado');
+    if (!existing) throw new NotFoundException('Campo nao encontrado');
 
     return this.prisma.projectHeaderField.delete({ where: { id } });
   }
