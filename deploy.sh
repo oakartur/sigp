@@ -6,9 +6,10 @@ set -e  # Para imediatamente se qualquer comando falhar
 
 echo "🚀 Iniciando o deploy do SIGP..."
 
-# 1. Parar serviços em execução (se houver) e remover redes/volumes órfãos
+# 1. Parar serviços em execução (se houver) e remover containers órfãos
+# IMPORTANTE: NÃO usar --volumes aqui para preservar os dados do banco (pg_data)!
 echo "📦 Parando serviços em execução..."
-docker compose down || true
+docker compose down --remove-orphans || true
 
 # 2. Subir apenas os serviços de infraestrutura (Banco de Dados e Redis)
 echo "🗄️  Iniciando PostgreSQL e Redis..."
