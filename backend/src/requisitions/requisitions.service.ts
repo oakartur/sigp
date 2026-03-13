@@ -173,11 +173,15 @@ export class RequisitionsService {
     const { scope, resolveToken } = this.buildFormulaScope(configs);
 
     let tokenIndex = 0;
-    const expressionWithTokens = normalizedExpression.replace(/\{\{\s*([^}]+)\s*\}\}/g, (_match, token) => {
-      const varName = `__token_${tokenIndex++}`;
-      scope[varName] = resolveToken(token) as any;
-      return varName;
-    });
+    const expressionWithTokens = normalizedExpression.replace(
+      /\{\{\s*([^}]+)\s*\}\}|\{\s*([^{}]+)\s*\}/g,
+      (_match, tokenDouble, tokenSingle) => {
+        const token = tokenDouble ?? tokenSingle;
+        const varName = `__token_${tokenIndex++}`;
+        scope[varName] = resolveToken(token) as any;
+        return varName;
+      },
+    );
 
     try {
       const compiled = math.compile(expressionWithTokens);

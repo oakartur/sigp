@@ -244,7 +244,6 @@ export default function RequisitionGrid() {
           label={config.field?.label || 'Campo calculado'}
           value={config.value || ''}
           InputProps={{ readOnly: true }}
-          helperText={config.field?.formulaExpression ? `Formula: ${config.field.formulaExpression}` : 'Calculado automaticamente'}
         />
       );
     }

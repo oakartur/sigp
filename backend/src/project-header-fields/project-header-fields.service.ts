@@ -73,7 +73,7 @@ export class ProjectHeaderFieldsService {
   }
 
   private validateFormulaSyntax(formula: string) {
-    const withPlaceholders = formula.replace(/\{\{\s*[^}]+\s*\}\}/g, '1');
+    const withPlaceholders = formula.replace(/\{\{\s*[^}]+\s*\}\}|\{\s*[^{}]+\s*\}/g, '1');
 
     try {
       math.parse(withPlaceholders);

@@ -49,11 +49,16 @@ export class CatalogService {
   }
 
   private validateFormulaExpression(formula: string) {
-    const withPlaceholders = formula.replace(/\{\{\s*[^}]+\s*\}\}/g, '1');
+    const withPlaceholders = formula.replace(/\{\{\s*[^}]+\s*\}\}|\{\s*[^{}]+\s*\}/g, '1');
     try {
       math.parse(withPlaceholders);
     } catch (error: any) {
-      throw new BadRequestException(`Formula de auto preenchimento invalida: ${error?.message || 'erro de sintaxe'}`);
+      const details = String(error?.message || 'erro de sintaxe');
+      const hasUnexpectedComma = /Unexpected operator ,/i.test(details);
+      const hint = hasUnexpectedComma
+        ? ' Use: Se(condicao, valor_se_verdadeiro, valor_se_falso).'
+        : '';
+      throw new BadRequestException(`Formula de auto preenchimento invalida: ${details}.${hint}`);
     }
   }
 
@@ -647,9 +652,24 @@ export class CatalogService {
   async validateAutoFormula(formula: string, context: Record<string, unknown> = {}) {
     const normalized = this.normalizeFormulaExpression(formula);
     if (!normalized) {
-      throw new BadRequestException('Formula vazia.');
+      return {
+        isValid: false,
+        normalizedExpression: '',
+        recognizedCommands: [],
+        recognizedFields: [],
+        unknownSymbols: [],
+        canEvaluate: false,
+        result: null,
+        error: 'Formula vazia.',
+      };
     }
-    this.validateFormulaExpression(normalized);
+
+    let syntaxError: string | null = null;
+    try {
+      this.validateFormulaExpression(normalized);
+    } catch (error: any) {
+      syntaxError = this.normalizeNullable(error?.message || 'erro de sintaxe');
+    }
 
     const original = this.normalizeNullable(formula);
     const commands = new Set<string>();
@@ -720,46 +740,79 @@ export class CatalogService {
 
     const tokenBindings = new Map<string, unknown>();
     let tokenIndex = 0;
-    const expressionWithTokens = normalized.replace(/\{\{\s*([^}]+)\s*\}\}/g, (_match, token) => {
-      const key = this.normalizeNullable(token);
-      const varName = `__token_${tokenIndex++}`;
+    const expressionWithTokens = normalized.replace(
+      /\{\{\s*([^}]+)\s*\}\}|\{\s*([^{}]+)\s*\}/g,
+      (_match, tokenDouble, tokenSingle) => {
+        const key = this.normalizeNullable(tokenDouble ?? tokenSingle);
+        const varName = `__token_${tokenIndex++}`;
 
-      const directField =
-        fieldLookup.get(key) ||
-        fieldLookup.get(key.toLowerCase()) ||
-        fieldLookup.get(this.normalizeFieldAlias(key));
-      if (directField) {
-        tokenBindings.set(varName, resolveByField(directField));
-      } else if (key in context) {
-        tokenBindings.set(varName, this.parseFormulaValue(context[key]));
-      } else {
-        tokenBindings.set(varName, '');
-      }
+        const directField =
+          fieldLookup.get(key) ||
+          fieldLookup.get(key.toLowerCase()) ||
+          fieldLookup.get(this.normalizeFieldAlias(key));
+        if (directField) {
+          tokenBindings.set(varName, resolveByField(directField));
+        } else if (key in context) {
+          tokenBindings.set(varName, this.parseFormulaValue(context[key]));
+        } else {
+          tokenBindings.set(varName, '');
+        }
 
-      return varName;
-    });
+        return varName;
+      },
+    );
 
     tokenBindings.forEach((value, key) => {
       scope[key] = value;
     });
 
-    const ast = math.parse(expressionWithTokens);
+    let ast: any = null;
+    let parseError: string | null = null;
+    try {
+      ast = math.parse(expressionWithTokens);
+    } catch (error: any) {
+      parseError = this.normalizeNullable(error?.message || 'erro ao interpretar formula');
+    }
+
     const symbols = new Set<string>();
-    ast.traverse((node: any, _path: string, parent: any) => {
-      if (!node?.isSymbolNode) return;
+    if (ast) {
+      ast.traverse((node: any, _path: string, parent: any) => {
+        if (!node?.isSymbolNode) return;
 
-      const name = String(node.name || '');
-      if (!name) return;
+        const name = String(node.name || '');
+        if (!name) return;
 
-      const isFunctionNode = Boolean(parent?.isFunctionNode);
-      const isFunctionName = isFunctionNode && parent?.fn === node;
-      if (isFunctionName) return;
+        const isFunctionNode = Boolean(parent?.isFunctionNode);
+        const isFunctionName = isFunctionNode && parent?.fn === node;
+        if (isFunctionName) return;
 
-      if (['true', 'false', 'pi', 'e', 'Infinity', 'NaN'].includes(name)) return;
-      if (name.startsWith('__token_')) return;
+        if (['true', 'false', 'pi', 'e', 'Infinity', 'NaN'].includes(name)) return;
+        if (name.startsWith('__token_')) return;
 
-      symbols.add(name);
-    });
+        symbols.add(name);
+      });
+    } else {
+      const rawCandidates = expressionWithTokens.match(/\b[A-Za-z_][A-Za-z0-9_]*\b/g) || [];
+      const reserved = new Set([
+        'if',
+        'se',
+        'and',
+        'or',
+        'e',
+        'ou',
+        'true',
+        'false',
+        'pi',
+        'Infinity',
+        'NaN',
+      ]);
+
+      for (const candidate of rawCandidates) {
+        if (candidate.startsWith('__token_')) continue;
+        if (reserved.has(candidate)) continue;
+        symbols.add(candidate);
+      }
+    }
 
     const matchedFieldIds = new Set<string>();
     const unknownSymbols: string[] = [];
@@ -788,7 +841,7 @@ export class CatalogService {
     let result: unknown = null;
     let evaluationError: string | null = null;
 
-    if (unknownSymbols.length === 0) {
+    if (!syntaxError && !parseError && unknownSymbols.length === 0) {
       try {
         const compiled = math.compile(expressionWithTokens);
         result = compiled.evaluate(scope as any);
@@ -797,8 +850,10 @@ export class CatalogService {
       }
     }
 
+    const finalError = syntaxError || parseError || evaluationError;
+
     return {
-      isValid: unknownSymbols.length === 0 && !evaluationError,
+      isValid: unknownSymbols.length === 0 && !finalError,
       normalizedExpression: normalized,
       recognizedCommands: Array.from(commands),
       recognizedFields: fields.filter((field) => matchedFieldIds.has(field.id)).map((field) => ({
@@ -806,9 +861,9 @@ export class CatalogService {
         label: field.label,
       })),
       unknownSymbols,
-      canEvaluate: unknownSymbols.length === 0,
+      canEvaluate: !syntaxError && !parseError && unknownSymbols.length === 0,
       result,
-      error: evaluationError,
+      error: finalError,
     };
   }
 
