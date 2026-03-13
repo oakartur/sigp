@@ -37,14 +37,14 @@ export class RequisitionsService {
     const existingConfigs = await tx.requisitionProjectConfig.findMany({
       where: { requisitionId },
     });
-    const existingFieldIds = new Set(existingConfigs.map((config) => config.fieldId));
+    const existingFieldIds = new Set(existingConfigs.map((config: any) => config.fieldId));
 
     const sourceMap = new Map<string, string | null>();
     if (sourceRequisitionId) {
       const sourceConfigs = await tx.requisitionProjectConfig.findMany({
         where: { requisitionId: sourceRequisitionId },
       });
-      sourceConfigs.forEach((sourceConfig) => {
+      sourceConfigs.forEach((sourceConfig: any) => {
         sourceMap.set(sourceConfig.fieldId, sourceConfig.value ?? null);
       });
     }
@@ -73,6 +73,50 @@ export class RequisitionsService {
     });
   }
 
+  private async createItemsFromCatalog(tx: Prisma.TransactionClient, requisitionId: string) {
+    const equipments = await tx.equipmentCatalog.findMany({
+      where: {
+        isActive: true,
+        operation: {
+          isActive: true,
+          local: { isActive: true },
+        },
+      },
+      include: {
+        operation: {
+          include: {
+            local: true,
+          },
+        },
+      },
+    });
+
+    if (equipments.length === 0) return;
+
+    const orderedEquipments = [...equipments].sort((a, b) => {
+      if (a.operation.local.sortOrder !== b.operation.local.sortOrder) {
+        return a.operation.local.sortOrder - b.operation.local.sortOrder;
+      }
+      if (a.operation.sortOrder !== b.operation.sortOrder) {
+        return a.operation.sortOrder - b.operation.sortOrder;
+      }
+      return a.sortOrder - b.sortOrder;
+    });
+
+    await tx.requisitionItem.createMany({
+      data: orderedEquipments.map((equipment) => ({
+        requisitionId,
+        equipmentCatalogId: equipment.id,
+        localName: equipment.operation.local.name,
+        operationName: equipment.operation.name,
+        equipmentCode: equipment.code,
+        equipmentName: equipment.description,
+        manualQuantity: equipment.baseQuantity,
+        status: 'PENDING' as const,
+      })),
+    });
+  }
+
   async createInitialRequisition(projectId: string, version?: string) {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Projeto nao encontrado.');
@@ -90,6 +134,7 @@ export class RequisitionsService {
       });
 
       await this.syncProjectConfigs(tx, requisition.id);
+      await this.createItemsFromCatalog(tx, requisition.id);
       return requisition;
     });
   }
@@ -133,9 +178,20 @@ export class RequisitionsService {
 
       if (req.items.length > 0) {
         await tx.requisitionItem.createMany({
-          data: req.items.map((item: RequisitionItem) => ({
+          data: req.items.map((item: RequisitionItem & {
+            equipmentCatalogId?: string | null;
+            localName?: string | null;
+            operationName?: string | null;
+            equipmentCode?: string | null;
+            manualQuantity?: number | null;
+          }) => ({
             requisitionId: newReq.id,
+            equipmentCatalogId: item.equipmentCatalogId ?? null,
+            localName: item.localName ?? null,
+            operationName: item.operationName ?? null,
+            equipmentCode: item.equipmentCode ?? null,
             equipmentName: item.equipmentName,
+            manualQuantity: item.manualQuantity ?? null,
             formulaId: item.formulaId,
             variablesPayload: item.variablesPayload ?? undefined,
             calculatedValue: item.calculatedValue,
@@ -143,6 +199,8 @@ export class RequisitionsService {
             status: 'PENDING' as const,
           })),
         });
+      } else {
+        await this.createItemsFromCatalog(tx, newReq.id);
       }
 
       await this.syncProjectConfigs(tx, newReq.id, req.id);
@@ -171,7 +229,14 @@ export class RequisitionsService {
   async findItems(reqId: string) {
     return this.prisma.requisitionItem.findMany({
       where: { requisitionId: reqId },
-      orderBy: { equipmentName: 'asc' },
+      include: {
+        equipmentCatalog: {
+          include: {
+            autoConfigField: { select: { id: true, label: true } },
+          },
+        },
+      },
+      orderBy: [{ localName: 'asc' }, { operationName: 'asc' }, { equipmentName: 'asc' }],
     });
   }
 
@@ -217,6 +282,53 @@ export class RequisitionsService {
     return this.findProjectConfigs(reqId);
   }
 
+  async autoFillItemsFromProjectConfigs(reqId: string) {
+    const requisition = await this.prisma.requisition.findUnique({ where: { id: reqId } });
+    if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
+    if (requisition.isReadOnly) {
+      throw new BadRequestException('Requisicao em modo somente leitura.');
+    }
+
+    const configs = await this.prisma.requisitionProjectConfig.findMany({
+      where: { requisitionId: reqId },
+    });
+    const configMap = new Map<string, number>();
+    for (const config of configs) {
+      if (!config.fieldId) continue;
+      const parsed = Number(String(config.value ?? '').replace(',', '.'));
+      if (!Number.isNaN(parsed)) {
+        configMap.set(config.fieldId, parsed);
+      }
+    }
+
+    const items = await this.prisma.requisitionItem.findMany({
+      where: { requisitionId: reqId, equipmentCatalogId: { not: null } },
+      include: { equipmentCatalog: true },
+    });
+
+    for (const item of items as any[]) {
+      const catalog = item.equipmentCatalog;
+      if (!catalog || !catalog.autoConfigFieldId) continue;
+
+      const configValue = configMap.get(catalog.autoConfigFieldId);
+      if (configValue === undefined) continue;
+
+      const base = catalog.baseQuantity && catalog.baseQuantity !== 0 ? catalog.baseQuantity : 1;
+      const multiplier = catalog.autoMultiplier ?? 1;
+      const calculatedValue = configValue * base * multiplier;
+
+      await this.prisma.requisitionItem.update({
+        where: { id: item.id },
+        data: {
+          calculatedValue,
+          versionLock: { increment: 1 },
+        },
+      });
+    }
+
+    return this.findItems(reqId);
+  }
+
   async addItem(reqId: string, payload: any) {
     const req = await this.prisma.requisition.findUnique({ where: { id: reqId } });
     if (!req) throw new NotFoundException('Requisicao nao encontrada.');
@@ -233,10 +345,36 @@ export class RequisitionsService {
     return this.prisma.requisitionItem.create({
       data: {
         requisitionId: reqId,
+        localName: payload.localName,
+        operationName: payload.operationName,
+        equipmentCode: payload.equipmentCode,
         equipmentName: payload.equipmentName,
+        manualQuantity: payload.manualQuantity ? Number(payload.manualQuantity) : null,
         formulaId: payload.formulaId,
         variablesPayload: payload.variables ? payload.variables : undefined,
         calculatedValue,
+      },
+    });
+  }
+
+  async updateItemQuantity(itemId: string, manualQuantity: number | null, currentLock: number) {
+    const item = await this.prisma.requisitionItem.findUnique({
+      where: { id: itemId },
+      include: { requisition: true },
+    });
+    if (!item) throw new BadRequestException('Item nao encontrado.');
+    if (item.versionLock !== currentLock) {
+      throw new ConflictException('Conflito de edicao no item.');
+    }
+    if (item.requisition.isReadOnly) {
+      throw new BadRequestException('Requisicao em modo somente leitura.');
+    }
+
+    return this.prisma.requisitionItem.update({
+      where: { id: itemId },
+      data: {
+        manualQuantity: manualQuantity === null ? null : Number(manualQuantity),
+        versionLock: { increment: 1 },
       },
     });
   }
@@ -260,7 +398,7 @@ export class RequisitionsService {
     const item = await this.prisma.requisitionItem.findUnique({ where: { id: itemId } });
     if (!item) throw new BadRequestException('Item nao encontrado.');
     if (item.versionLock !== currentLock) {
-      throw new ConflictException('O item foi editado pelo admin. Atualize a lista.');
+      throw new ConflictException('O item foi editado por outro usuario. Atualize a lista.');
     }
     return this.prisma.requisitionItem.update({
       where: { id: itemId },

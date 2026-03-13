@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import ProjectRequisitions from './pages/ProjectRequisitions';
 import RequisitionGrid from './pages/RequisitionGrid';
 import ProjectHeaderConfig from './pages/ProjectHeaderConfig';
+import CatalogsConfig from './pages/CatalogsConfig';
 import PrivateRoute from './components/PrivateRoute';
 
 // Paleta de Cores Premium Elegante Requisitada nas Instruções Mestre
@@ -69,6 +70,15 @@ function App() {
               element={
                 <PrivateRoute>
                   <ProjectHeaderConfig />
+                </PrivateRoute>
+              }
+            />
+
+            <Route
+              path="/settings/catalogs"
+              element={
+                <PrivateRoute>
+                  <CatalogsConfig />
                 </PrivateRoute>
               }
             />

@@ -16,37 +16,41 @@ export class ExcelProcessor extends WorkerHost {
 
   async process(job: Job<{ requisitionId: string }, any, string>): Promise<any> {
     const { requisitionId } = job.data;
-    this.logger.log(`Gerando excel on-the-fly para Requisição ${requisitionId}`);
+    this.logger.log(`Gerando excel para Requisicao ${requisitionId}`);
 
     const reqData = await this.prisma.requisition.findUnique({
       where: { id: requisitionId },
-      include: { 
+      include: {
         project: true,
-        items: true
-      }
+        items: true,
+      },
     });
 
     if (!reqData) {
-      throw new Error(`Requisição ${requisitionId} não encontrada`);
+      throw new Error(`Requisicao ${requisitionId} nao encontrada`);
     }
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('ExportNimbi');
 
-    // Headers Nimbi (exemplo)
     sheet.columns = [
-      { header: 'Projeto', key: 'project', width: 20 },
-      { header: 'Versao', key: 'version', width: 10 },
-      { header: 'Equipamento', key: 'equipment', width: 30 },
-      { header: 'QuantidadeAprovada', key: 'quantity', width: 20 },
+      { header: 'Projeto', key: 'project', width: 24 },
+      { header: 'Versao', key: 'version', width: 14 },
+      { header: 'Local', key: 'local', width: 24 },
+      { header: 'Operacao', key: 'operation', width: 24 },
+      { header: 'Codigo', key: 'code', width: 18 },
+      { header: 'Equipamento', key: 'equipment', width: 40 },
+      { header: 'QuantidadeAprovada', key: 'quantity', width: 22 },
     ];
 
     for (const item of reqData.items) {
-      // Regra de override: Se o Override existe, ele ganha; senão, o Calculado.
-      const finalQtd = item.overrideValue ?? item.calculatedValue ?? 0;
+      const finalQtd = item.manualQuantity ?? item.overrideValue ?? item.calculatedValue ?? 0;
       sheet.addRow({
         project: reqData.project.name,
         version: reqData.version,
+        local: item.localName ?? '',
+        operation: item.operationName ?? '',
+        code: item.equipmentCode ?? '',
         equipment: item.equipmentName,
         quantity: finalQtd,
       });
@@ -59,9 +63,8 @@ export class ExcelProcessor extends WorkerHost {
 
     const filePath = path.join(outDir, `req_${requisitionId}_v${reqData.version}.xlsx`);
     await workbook.xlsx.writeFile(filePath);
-    
-    this.logger.log(`Excel gerado com sucesso em ${filePath}.`);
-    
+
+    this.logger.log(`Excel gerado em ${filePath}`);
     return { filePath };
   }
 }

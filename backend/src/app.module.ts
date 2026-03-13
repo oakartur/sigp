@@ -9,6 +9,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { TasksModule } from './tasks/tasks.module';
 import { RequisitionsModule } from './requisitions/requisitions.module';
 import { ProjectHeaderFieldsModule } from './project-header-fields/project-header-fields.module';
+import { CatalogModule } from './catalog/catalog.module';
 
 @Module({
   imports: [
@@ -28,7 +29,7 @@ import { ProjectHeaderFieldsModule } from './project-header-fields/project-heade
     RequisitionsModule,
     TasksModule,
     ProjectHeaderFieldsModule,
+    CatalogModule,
   ],
 })
 export class AppModule {}
-

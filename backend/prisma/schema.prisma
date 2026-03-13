@@ -61,20 +61,26 @@ enum ItemStatus {
 }
 
 model RequisitionItem {
-  id               String      @id @default(uuid())
-  requisitionId    String
-  requisition      Requisition @relation(fields: [requisitionId], references: [id])
-  equipmentName    String
-  formulaId        String?
-  formula          Formula?    @relation(fields: [formulaId], references: [id])
-  variablesPayload Json?
-  calculatedValue  Float?
-  overrideValue    Float?
-  status           ItemStatus  @default(PENDING)
-  receivedAt       DateTime?
-  receivedById     String?
-  observation      String?
-  versionLock      Int         @default(1)
+  id                 String            @id @default(uuid())
+  requisitionId      String
+  requisition        Requisition       @relation(fields: [requisitionId], references: [id])
+  equipmentCatalogId String?
+  equipmentCatalog   EquipmentCatalog? @relation(fields: [equipmentCatalogId], references: [id], onDelete: SetNull)
+  localName          String?
+  operationName      String?
+  equipmentCode      String?
+  equipmentName      String
+  manualQuantity     Float?
+  formulaId          String?
+  formula            Formula?          @relation(fields: [formulaId], references: [id])
+  variablesPayload   Json?
+  calculatedValue    Float?
+  overrideValue      Float?
+  status             ItemStatus        @default(PENDING)
+  receivedAt         DateTime?
+  receivedById       String?
+  observation        String?
+  versionLock        Int               @default(1)
 
   @@index([requisitionId])
 }
@@ -101,4 +107,48 @@ model RequisitionProjectConfig {
 
   @@unique([requisitionId, fieldId])
   @@index([requisitionId])
+}
+
+model LocalCatalog {
+  id        String             @id @default(uuid())
+  name      String
+  sortOrder Int                @default(0)
+  isActive  Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  operations OperationCatalog[]
+}
+
+model OperationCatalog {
+  id          String             @id @default(uuid())
+  localId     String
+  local       LocalCatalog       @relation(fields: [localId], references: [id], onDelete: Cascade)
+  name        String
+  sortOrder   Int                @default(0)
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  equipments  EquipmentCatalog[]
+
+  @@index([localId])
+}
+
+model EquipmentCatalog {
+  id                String              @id @default(uuid())
+  operationId       String
+  operation         OperationCatalog    @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  code              String
+  description       String
+  baseQuantity      Float               @default(0)
+  autoConfigFieldId String?
+  autoConfigField   ProjectHeaderField? @relation(fields: [autoConfigFieldId], references: [id], onDelete: SetNull)
+  autoMultiplier    Float               @default(1)
+  sortOrder         Int                 @default(0)
+  isActive          Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  requisitionItems  RequisitionItem[]
+
+  @@index([operationId])
+  @@index([autoConfigFieldId])
 }

@@ -103,8 +103,16 @@ export default function Dashboard() {
             <Typography variant="body2" color="text.secondary">
               {user?.email} ({user?.role})
             </Typography>
-            {user?.role === 'ADMIN' && (
+            {isAdminOrQuantifier && (
               <>
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  onClick={() => navigate('/settings/catalogs')}
+                  sx={{ borderRadius: 2 }}
+                >
+                  Catalogos
+                </Button>
                 <Button
                   variant="outlined"
                   color="primary"
@@ -113,13 +121,15 @@ export default function Dashboard() {
                 >
                   Configurações de Projeto
                 </Button>
-                <Tooltip title="Configurações de sistema (em breve)">
-                  <span>
-                    <IconButton color="primary" disabled>
-                      <SettingsIcon />
-                    </IconButton>
-                  </span>
-                </Tooltip>
+                {user?.role === 'ADMIN' && (
+                  <Tooltip title="Configurações de sistema (em breve)">
+                    <span>
+                      <IconButton color="primary" disabled>
+                        <SettingsIcon />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                )}
               </>
             )}
             <IconButton color="secondary" onClick={handleLogout} title="Sair">

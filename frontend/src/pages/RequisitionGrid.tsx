@@ -2,16 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DataGrid } from '@mui/x-data-grid';
 import type { GridColDef, GridRenderCellParams, GridRowModel } from '@mui/x-data-grid';
-import {
-  Box,
-  Typography,
-  Button,
-  Paper,
-  Chip,
-  IconButton,
-  TextField,
-  CircularProgress,
-} from '@mui/material';
+import { Box, Typography, Button, Paper, Chip, IconButton, TextField, CircularProgress } from '@mui/material';
 import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
 import { api } from '../context/AuthContext';
 
@@ -25,54 +16,80 @@ interface ProjectConfig {
   };
 }
 
+interface RequisitionItemRow {
+  id: string;
+  localName?: string | null;
+  operationName?: string | null;
+  equipmentCode?: string | null;
+  equipmentName: string;
+  manualQuantity?: number | null;
+  calculatedValue?: number | null;
+  overrideValue?: number | null;
+  status: 'PENDING' | 'RECEIVED';
+  versionLock: number;
+}
+
 export default function RequisitionGrid() {
   const { reqId } = useParams();
   const navigate = useNavigate();
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<RequisitionItemRow[]>([]);
   const [configs, setConfigs] = useState<ProjectConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingConfigs, setSavingConfigs] = useState(false);
+  const [autoFilling, setAutoFilling] = useState(false);
 
-  useEffect(() => {
+  const loadAll = async () => {
     if (!reqId) return;
 
     setLoading(true);
-    Promise.all([api.get(`/requisitions/${reqId}/items`), api.get(`/requisitions/${reqId}/project-configs`)])
-      .then(([itemsRes, configsRes]) => {
-        setRows(itemsRes.data);
-        setConfigs(
-          (configsRes.data || []).map((config: any) => ({
-            id: config.id,
-            fieldId: config.fieldId,
-            value: config.value ?? '',
-            field: config.field,
-          })),
-        );
-      })
-      .catch((err) => {
-        console.error('Failed to fetch requisition data', err);
-      })
-      .finally(() => setLoading(false));
+    try {
+      const [itemsRes, configsRes] = await Promise.all([
+        api.get(`/requisitions/${reqId}/items`),
+        api.get(`/requisitions/${reqId}/project-configs`),
+      ]);
+      setRows(itemsRes.data || []);
+      setConfigs(
+        (configsRes.data || []).map((config: any) => ({
+          id: config.id,
+          fieldId: config.fieldId,
+          value: config.value ?? '',
+          field: config.field,
+        })),
+      );
+    } catch (err) {
+      console.error('Failed to fetch requisition data', err);
+      alert('Erro ao carregar requisicao');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAll();
   }, [reqId]);
 
   const columns: GridColDef[] = [
-    { field: 'equipmentName', headerName: 'Equipamento', width: 200 },
-    { field: 'calculatedValue', headerName: 'Qtd Calculada (Formula)', width: 200 },
+    { field: 'localName', headerName: 'Local', width: 190 },
+    { field: 'operationName', headerName: 'Operacao', width: 190 },
+    { field: 'equipmentCode', headerName: 'Codigo', width: 140 },
+    { field: 'equipmentName', headerName: 'Equipamento', width: 260 },
     {
-      field: 'overrideValue',
-      headerName: 'Sobrescrita Admin',
-      width: 200,
+      field: 'manualQuantity',
+      headerName: 'Qtd Manual',
+      width: 140,
       editable: true,
-      renderCell: (params: GridRenderCellParams) => (
-        <Box sx={{ color: params.value ? 'secondary.main' : 'inherit', fontWeight: params.value ? 'bold' : 'normal' }}>
-          {params.value || '-'}
-        </Box>
-      ),
+    },
+    { field: 'calculatedValue', headerName: 'Qtd Auto', width: 130 },
+    {
+      field: 'finalQuantity',
+      headerName: 'Qtd Final',
+      width: 130,
+      valueGetter: (_value, row) => row.manualQuantity ?? row.overrideValue ?? row.calculatedValue ?? 0,
     },
     {
       field: 'status',
       headerName: 'Status',
-      width: 150,
+      width: 140,
       renderCell: (params: GridRenderCellParams) => {
         const isReceived = params.value === 'RECEIVED';
         return <Chip label={params.value} color={isReceived ? 'success' : 'warning'} variant="outlined" />;
@@ -81,20 +98,23 @@ export default function RequisitionGrid() {
   ];
 
   const processRowUpdate = async (newRow: GridRowModel, oldRow: GridRowModel) => {
-    if (newRow.overrideValue !== oldRow.overrideValue) {
-      await api.put(`/requisitions/items/${newRow.id}/override`, {
-        overrideValue: newRow.overrideValue,
-        currentLock: newRow.versionLock,
+    if (newRow.manualQuantity !== oldRow.manualQuantity) {
+      const normalizedValue =
+        newRow.manualQuantity === '' || newRow.manualQuantity === null || newRow.manualQuantity === undefined
+          ? null
+          : Number(newRow.manualQuantity);
+
+      const res = await api.put(`/requisitions/items/${newRow.id}/quantity`, {
+        manualQuantity: normalizedValue,
+        currentLock: oldRow.versionLock,
       });
-      return newRow;
+      return res.data;
     }
     return oldRow;
   };
 
   const handleConfigChange = (fieldId: string, value: string) => {
-    setConfigs((prev) =>
-      prev.map((config) => (config.fieldId === fieldId ? { ...config, value } : config)),
-    );
+    setConfigs((prev) => prev.map((config) => (config.fieldId === fieldId ? { ...config, value } : config)));
   };
 
   const handleSaveConfigs = async () => {
@@ -123,6 +143,20 @@ export default function RequisitionGrid() {
     }
   };
 
+  const handleAutoFill = async () => {
+    if (!reqId) return;
+    try {
+      setAutoFilling(true);
+      const res = await api.post(`/requisitions/${reqId}/items/auto-fill`);
+      setRows(res.data || []);
+    } catch (err) {
+      console.error('Failed to auto fill quantities', err);
+      alert('Erro ao preencher quantidades automaticamente');
+    } finally {
+      setAutoFilling(false);
+    }
+  };
+
   return (
     <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: 'background.default', p: { xs: 1, md: 3 } }}>
       <Paper sx={{ width: '100%', p: 2, mb: 2, bgcolor: 'background.paper', borderRadius: 2 }}>
@@ -137,10 +171,13 @@ export default function RequisitionGrid() {
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Button variant="contained" color="primary" onClick={handleSaveConfigs} disabled={savingConfigs || loading}>
-              {savingConfigs ? 'Salvando...' : 'Salvar Configuracoes de Projeto'}
+              {savingConfigs ? 'Salvando...' : 'Salvar Configuracoes'}
+            </Button>
+            <Button variant="outlined" color="secondary" onClick={handleAutoFill} disabled={autoFilling || loading}>
+              {autoFilling ? 'Auto preenchendo...' : 'Auto preencher Quantidades'}
             </Button>
             <Button variant="contained" color="secondary" onClick={() => api.post(`/tasks/excel/${reqId}`)} disabled={loading}>
-              Gerar Export Nimbi
+              Gerar Export
             </Button>
           </Box>
         </Box>
@@ -169,7 +206,7 @@ export default function RequisitionGrid() {
         )}
       </Paper>
 
-      <Paper sx={{ height: 600, width: '100%', p: 2, bgcolor: 'background.paper', borderRadius: 2 }}>
+      <Paper sx={{ height: 640, width: '100%', p: 2, bgcolor: 'background.paper', borderRadius: 2 }}>
         <DataGrid
           rows={rows}
           columns={columns}

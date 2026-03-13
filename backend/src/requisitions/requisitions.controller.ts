@@ -61,6 +61,21 @@ export class RequisitionsController {
     return this.requisitionsService.addItem(reqId, body);
   }
 
+  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Post(':reqId/items/auto-fill')
+  autoFillItems(@Param('reqId') reqId: string) {
+    return this.requisitionsService.autoFillItemsFromProjectConfigs(reqId);
+  }
+
+  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Put('items/:itemId/quantity')
+  updateItemQuantity(
+    @Param('itemId') itemId: string,
+    @Body() body: { manualQuantity: number | null; currentLock: number },
+  ) {
+    return this.requisitionsService.updateItemQuantity(itemId, body.manualQuantity, body.currentLock);
+  }
+
   @Roles(Role.ADMIN)
   @Put('items/:itemId/override')
   overrideItem(@Param('itemId') itemId: string, @Body() body: { overrideValue: number; currentLock: number }) {
