@@ -80,7 +80,12 @@ export default function ProjectHeaderConfig() {
       setFields(res.data);
     } catch (err) {
       console.error('Failed to fetch header fields', err);
-      showSnackbar('Erro ao carregar campos', 'error');
+      const apiError = err as AxiosError<{ message?: string | string[] }>;
+      const backendMessage = apiError.response?.data?.message;
+      const errorMessage = Array.isArray(backendMessage)
+        ? backendMessage.join(' ')
+        : backendMessage || 'Erro ao carregar campos';
+      showSnackbar(errorMessage, 'error');
     } finally {
       setLoading(false);
     }
