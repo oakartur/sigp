@@ -4,3 +4,5 @@ node_modules
 .git
 .prettierrc
 eslint.config.mjs
+dist
+*.tsbuildinfo
