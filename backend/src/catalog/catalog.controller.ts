@@ -1,6 +1,19 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { AuthGuard } from '@nestjs/passport';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { CatalogService } from './catalog.service';
@@ -95,5 +108,15 @@ export class CatalogController {
   @Delete('equipments/:id')
   removeEquipment(@Param('id') id: string) {
     return this.catalogService.removeEquipment(id);
+  }
+
+  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Post('import')
+  @UseInterceptors(FileInterceptor('file'))
+  importCatalog(@UploadedFile() file: any) {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('Arquivo nao enviado.');
+    }
+    return this.catalogService.importCatalog(file.originalname || 'catalog.csv', file.buffer);
   }
 }

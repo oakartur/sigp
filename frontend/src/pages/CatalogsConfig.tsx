@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AppBar,
@@ -74,9 +74,11 @@ type EquipmentDialogState = {
 
 export default function CatalogsConfig() {
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [locals, setLocals] = useState<LocalCatalog[]>([]);
   const [headerFields, setHeaderFields] = useState<HeaderField[]>([]);
 
@@ -151,7 +153,7 @@ export default function CatalogsConfig() {
   };
 
   const saveEquipment = async () => {
-    if (!equipmentDialog.operationId || !equipmentDialog.code.trim() || !equipmentDialog.description.trim()) return;
+    if (!equipmentDialog.operationId || !equipmentDialog.description.trim()) return;
     try {
       setSaving(true);
       const payload = {
@@ -202,6 +204,48 @@ export default function CatalogsConfig() {
     await fetchData();
   };
 
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setImporting(true);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await api.post('/catalog/import', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      const data = res.data || {};
+      const message = [
+        `Linhas processadas: ${data.rowsProcessed ?? 0}`,
+        `Locais criados: ${data.localsCreated ?? 0}`,
+        `Operacoes criadas: ${data.operationsCreated ?? 0}`,
+        `Equipamentos criados: ${data.equipmentsCreated ?? 0}`,
+        `Equipamentos atualizados: ${data.equipmentsUpdated ?? 0}`,
+        `Linhas ignoradas: ${data.rowsSkipped ?? 0}`,
+      ].join('\n');
+      alert(`Importacao concluida.\n\n${message}`);
+
+      if (Array.isArray(data.errors) && data.errors.length > 0) {
+        console.warn('Import warnings:', data.errors);
+      }
+
+      await fetchData();
+    } catch (err) {
+      console.error('Failed to import catalog', err);
+      alert('Erro ao importar catalogo. Verifique o formato do arquivo.');
+    } finally {
+      setImporting(false);
+      event.target.value = '';
+    }
+  };
+
   return (
     <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: 'background.default' }}>
       <AppBar
@@ -216,9 +260,21 @@ export default function CatalogsConfig() {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold', color: 'primary.main' }}>
             Catalogo de Local, Operacao e Equipamentos
           </Typography>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setLocalDialog({ open: true, name: '' })}>
-            Novo Local
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.txt,.xlsx"
+              style={{ display: 'none' }}
+              onChange={handleImportFile}
+            />
+            <Button variant="outlined" color="secondary" onClick={handleImportClick} disabled={importing}>
+              {importing ? 'Importando...' : 'Importar CSV/Excel'}
+            </Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setLocalDialog({ open: true, name: '' })}>
+              Novo Local
+            </Button>
+          </Box>
         </Toolbar>
       </AppBar>
 
@@ -445,7 +501,7 @@ export default function CatalogsConfig() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1 }}>
             <TextField
               autoFocus
-              label="Codigo"
+              label="Codigo Nimbi (opcional)"
               value={equipmentDialog.code}
               onChange={(e) => setEquipmentDialog((prev) => ({ ...prev, code: e.target.value }))}
               fullWidth
@@ -505,7 +561,7 @@ export default function CatalogsConfig() {
           <Button
             variant="contained"
             onClick={saveEquipment}
-            disabled={!equipmentDialog.code.trim() || !equipmentDialog.description.trim() || saving}
+            disabled={!equipmentDialog.description.trim() || saving}
           >
             Salvar
           </Button>
