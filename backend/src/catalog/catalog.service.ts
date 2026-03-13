@@ -86,12 +86,10 @@ export class CatalogService {
     ]);
 
     if (localIdx < 0 || operationIdx < 0 || descriptionIdx < 0) {
-      throw new BadRequestException(
-        'Cabecalho invalido. Colunas obrigatorias: Local, Operacao e Descricao dos Equipamentos. Codigo Nimbi e opcional.',
-      );
+      return null;
     }
 
-    return { localIdx, operationIdx, codeIdx, descriptionIdx };
+    return { localIdx, operationIdx, codeIdx, descriptionIdx } as const;
   }
 
   private parseCsvContent(contentRaw: string): ImportRow[] {
@@ -103,19 +101,37 @@ export class CatalogService {
 
     if (lines.length === 0) return [];
 
-    const firstLine = lines[0];
-    const delimiter =
-      (firstLine.match(/\t/g) || []).length >= (firstLine.match(/;/g) || []).length
-        ? '\t'
-        : (firstLine.match(/;/g) || []).length >= (firstLine.match(/,/g) || []).length
-          ? ';'
-          : ',';
+    const sample = lines.slice(0, Math.min(lines.length, 5)).join('\n');
+    const delimiterScores = [
+      { delimiter: '\t', score: (sample.match(/\t/g) || []).length },
+      { delimiter: ';', score: (sample.match(/;/g) || []).length },
+      { delimiter: ',', score: (sample.match(/,/g) || []).length },
+    ];
+    delimiterScores.sort((a, b) => b.score - a.score);
+    const delimiter = delimiterScores[0].delimiter;
 
-    const headers = this.parseDelimitedLine(lines[0], delimiter);
-    const indexes = this.mapHeaderIndexes(headers);
+    let headerLineIndex = -1;
+    let indexes: ReturnType<typeof this.mapHeaderIndexes> = null;
+
+    // Alguns CSVs possuem linhas antes do cabecalho (ex.: "sep=,").
+    for (let i = 0; i < Math.min(lines.length, 10); i++) {
+      const headers = this.parseDelimitedLine(lines[i], delimiter);
+      const mapped = this.mapHeaderIndexes(headers);
+      if (mapped) {
+        headerLineIndex = i;
+        indexes = mapped;
+        break;
+      }
+    }
+
+    if (!indexes) {
+      throw new BadRequestException(
+        'Cabecalho invalido. Colunas obrigatorias: Local, Operacao e Descricao dos Equipamentos. Codigo Nimbi e opcional.',
+      );
+    }
 
     const rows: ImportRow[] = [];
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = headerLineIndex + 1; i < lines.length; i++) {
       const cols = this.parseDelimitedLine(lines[i], delimiter);
       rows.push({
         local: this.normalizeNullable(cols[indexes.localIdx] || ''),
@@ -155,11 +171,27 @@ export class CatalogService {
     const sheet = workbook.worksheets[0];
     if (!sheet) return [];
 
-    const headerValues = (sheet.getRow(1).values as any[]).slice(1).map((value) => String(value ?? '').trim());
-    const indexes = this.mapHeaderIndexes(headerValues);
+    let headerRowIndex = -1;
+    let indexes: ReturnType<typeof this.mapHeaderIndexes> = null;
+
+    for (let r = 1; r <= Math.min(sheet.rowCount, 20); r++) {
+      const headerValues = (sheet.getRow(r).values as any[]).slice(1).map((value) => String(value ?? '').trim());
+      const mapped = this.mapHeaderIndexes(headerValues);
+      if (mapped) {
+        headerRowIndex = r;
+        indexes = mapped;
+        break;
+      }
+    }
+
+    if (!indexes) {
+      throw new BadRequestException(
+        'Cabecalho invalido. Colunas obrigatorias: Local, Operacao e Descricao dos Equipamentos. Codigo Nimbi e opcional.',
+      );
+    }
 
     const rows: ImportRow[] = [];
-    for (let r = 2; r <= sheet.rowCount; r++) {
+    for (let r = headerRowIndex + 1; r <= sheet.rowCount; r++) {
       const row = sheet.getRow(r);
       const values = (row.values as any[]).slice(1).map((value) => String(value ?? '').trim());
 
