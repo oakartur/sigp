@@ -36,6 +36,12 @@ export class CatalogController {
   }
 
   @Roles(Role.ADMIN)
+  @Delete('clear')
+  clearCatalog() {
+    return this.catalogService.clearCatalog();
+  }
+
+  @Roles(Role.ADMIN)
   @Post('locals')
   createLocal(@Body() body: { name: string }) {
     return this.catalogService.createLocal(body);

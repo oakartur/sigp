@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Delete } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -26,5 +26,11 @@ export class ProjectsController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.projectsService.findOne(id);
+  }
+
+  @Roles(Role.ADMIN)
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.projectsService.remove(id);
   }
 }

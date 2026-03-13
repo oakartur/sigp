@@ -100,6 +100,7 @@ export default function CatalogsConfig() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [clearingCatalog, setClearingCatalog] = useState(false);
   const [locals, setLocals] = useState<LocalCatalog[]>([]);
   const [headerFields, setHeaderFields] = useState<HeaderField[]>([]);
   const [filterLocalId, setFilterLocalId] = useState('');
@@ -240,6 +241,16 @@ export default function CatalogsConfig() {
       operations: local.operations.filter((operation) => !filterOperationId || operation.id === filterOperationId),
     }))
     .filter((local) => !filterOperationId || local.operations.length > 0);
+
+  const totalCatalogItems = locals.reduce(
+    (total, local) => total + local.operations.reduce((opTotal, operation) => opTotal + operation.equipments.length, 0),
+    0,
+  );
+
+  const filteredCatalogItems = filteredLocals.reduce(
+    (total, local) => total + local.operations.reduce((opTotal, operation) => opTotal + operation.equipments.length, 0),
+    0,
+  );
 
   const saveLocal = async () => {
     if (!localDialog.name.trim()) return;
@@ -384,6 +395,27 @@ export default function CatalogsConfig() {
     }
   };
 
+  const handleClearCatalog = async () => {
+    const confirmed = window.confirm(
+      'Limpar todo o catalogo?\n\nTodos os Locais, Operacoes e Equipamentos de template serao removidos.',
+    );
+    if (!confirmed) return;
+
+    try {
+      setClearingCatalog(true);
+      await api.delete('/catalog/clear');
+      setFilterLocalId('');
+      setFilterOperationId('');
+      await fetchData();
+      alert('Catalogo limpo com sucesso.');
+    } catch (err) {
+      console.error('Failed to clear catalog', err);
+      alert('Erro ao limpar catalogo.');
+    } finally {
+      setClearingCatalog(false);
+    }
+  };
+
   return (
     <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: 'background.default' }}>
       <AppBar
@@ -408,6 +440,9 @@ export default function CatalogsConfig() {
             />
             <Button variant="outlined" color="secondary" onClick={handleImportClick} disabled={importing}>
               {importing ? 'Importando...' : 'Importar CSV/Excel'}
+            </Button>
+            <Button variant="outlined" color="error" onClick={handleClearCatalog} disabled={clearingCatalog || loading}>
+              {clearingCatalog ? 'Limpando...' : 'Limpar catalogo'}
             </Button>
             <Button variant="contained" startIcon={<AddIcon />} onClick={() => setLocalDialog({ open: true, name: '' })}>
               Novo Local
@@ -459,6 +494,11 @@ export default function CatalogsConfig() {
             >
               Limpar filtros
             </Button>
+
+            <Chip color="primary" variant="outlined" label={`Itens no catalogo: ${totalCatalogItems}`} />
+            {(filterLocalId || filterOperationId) && (
+              <Chip color="secondary" variant="outlined" label={`Itens exibidos: ${filteredCatalogItems}`} />
+            )}
           </Box>
         </Paper>
 

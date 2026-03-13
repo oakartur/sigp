@@ -819,4 +819,25 @@ export class RequisitionsService {
       },
     });
   }
+
+  async remove(id: string) {
+    const requisition = await this.prisma.requisition.findUnique({
+      where: { id },
+      select: { id: true, projectId: true },
+    });
+    if (!requisition) {
+      throw new NotFoundException('Requisicao nao encontrada.');
+    }
+
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.requisitionItem.deleteMany({ where: { requisitionId: id } });
+      await tx.requisitionProjectConfig.deleteMany({ where: { requisitionId: id } });
+      await tx.requisition.delete({ where: { id } });
+    });
+
+    return {
+      deletedRequisitionId: id,
+      projectId: requisition.projectId,
+    };
+  }
 }

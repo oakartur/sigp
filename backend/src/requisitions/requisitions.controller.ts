@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Param, Put, UseGuards, Req, Get } from '@nestjs/common';
+import { Controller, Post, Body, Param, Put, UseGuards, Req, Get, Delete } from '@nestjs/common';
 import { RequisitionsService } from './requisitions.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -90,5 +90,11 @@ export class RequisitionsController {
     @Req() req: any,
   ) {
     return this.requisitionsService.managerReceiveItem(itemId, req.user.id, body.observation, body.currentLock);
+  }
+
+  @Roles(Role.ADMIN)
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.requisitionsService.remove(id);
   }
 }

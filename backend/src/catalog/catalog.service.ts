@@ -424,6 +424,23 @@ export class CatalogService {
     });
   }
 
+  async clearCatalog() {
+    const [localsCount, operationsCount, equipmentsCount] = await Promise.all([
+      this.prisma.localCatalog.count(),
+      this.prisma.operationCatalog.count(),
+      this.prisma.equipmentCatalog.count(),
+    ]);
+
+    await this.prisma.localCatalog.deleteMany({});
+
+    return {
+      cleared: true,
+      deletedLocals: localsCount,
+      deletedOperations: operationsCount,
+      deletedEquipments: equipmentsCount,
+    };
+  }
+
   async createLocal(data: { name: string }) {
     const name = data?.name?.trim();
     if (!name) throw new BadRequestException('Nome do local e obrigatorio.');

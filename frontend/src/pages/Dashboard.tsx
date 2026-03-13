@@ -29,6 +29,7 @@ import {
   Settings as SettingsIcon,
   Inventory2 as InventoryIcon,
   Tune as TuneIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { AuthContext, api } from '../context/AuthContext';
 
@@ -46,6 +47,7 @@ export default function Dashboard() {
   const [openModal, setOpenModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
 
   const isAdmin = user?.role === 'ADMIN';
   const canCreateProject = user?.role === 'ADMIN' || user?.role === 'QUANTIFIER';
@@ -86,6 +88,25 @@ export default function Dashboard() {
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const handleDeleteProject = async (project: Project) => {
+    if (!isAdmin) return;
+    const confirmed = window.confirm(
+      `Excluir o projeto "${project.name}"?\n\nTodas as requisicoes e itens vinculados tambem serao removidos.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      setDeletingProjectId(project.id);
+      await api.delete(`/projects/${project.id}`);
+      await fetchProjects();
+    } catch (error) {
+      console.error('Failed to delete project', error);
+      alert('Erro ao excluir projeto.');
+    } finally {
+      setDeletingProjectId(null);
+    }
   };
 
   return (
@@ -227,10 +248,26 @@ export default function Dashboard() {
                     ID: {project.id.slice(0, 12)}
                   </Typography>
                 </CardContent>
-                <CardActions sx={{ px: 2, pb: 2 }}>
-                  <Button fullWidth variant="contained" onClick={() => navigate(`/project/${project.id}`)}>
+                <CardActions sx={{ px: 2, pb: 2, gap: 1 }}>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    onClick={() => navigate(`/project/${project.id}`)}
+                    disabled={deletingProjectId === project.id}
+                  >
                     Abrir requisicoes
                   </Button>
+                  {isAdmin && (
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => handleDeleteProject(project)}
+                      disabled={deletingProjectId === project.id}
+                    >
+                      {deletingProjectId === project.id ? 'Excluindo...' : 'Excluir'}
+                    </Button>
+                  )}
                 </CardActions>
               </Card>
             ))}

@@ -30,6 +30,7 @@ import {
   ArrowBack as ArrowBackIcon,
   Edit as EditIcon,
   FileCopy as SnapshotIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { AuthContext, api } from '../context/AuthContext';
 
@@ -158,6 +159,26 @@ export default function ProjectRequisitions() {
     } catch (error) {
       console.error('Failed to update version', error);
       alert('Erro ao atualizar versao.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteRequisition = async (requisition: Requisition) => {
+    if (user?.role !== 'ADMIN') return;
+
+    const confirmed = window.confirm(
+      `Excluir a requisicao ${requisition.version}?\n\nTodos os itens e configuracoes dessa versao serao removidos.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      setActionLoading(true);
+      await api.delete(`/requisitions/${requisition.id}`);
+      await fetchData();
+    } catch (error) {
+      console.error('Failed to delete requisition', error);
+      alert('Erro ao excluir requisicao.');
     } finally {
       setActionLoading(false);
     }
@@ -299,6 +320,20 @@ export default function ProjectRequisitions() {
                               Clonar
                             </Button>
                           </>
+                        )}
+                        {user?.role === 'ADMIN' && (
+                          <Tooltip title="Excluir requisicao">
+                            <span>
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => handleDeleteRequisition(requisition)}
+                                disabled={actionLoading}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
                         )}
                         <Button variant="contained" size="small" onClick={() => navigate(`/requisition/${requisition.id}`)}>
                           Abrir
