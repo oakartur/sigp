@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { DataGrid } from '@mui/x-data-grid';
 import type { GridColDef, GridRenderCellParams, GridRowModel } from '@mui/x-data-grid';
@@ -15,10 +15,9 @@ import {
   Stack,
   TextField,
   Toolbar,
-  Tooltip,
   Typography,
 } from '@mui/material';
-import { ArrowBack as ArrowBackIcon, AutoAwesome as AutoAwesomeIcon, Save as SaveIcon } from '@mui/icons-material';
+import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
 import { api } from '../context/AuthContext';
 import type { AxiosError } from 'axios';
 
@@ -58,18 +57,110 @@ export default function RequisitionGrid() {
   const [loading, setLoading] = useState(true);
   const [savingConfigs, setSavingConfigs] = useState(false);
   const [autoFilling, setAutoFilling] = useState(false);
+  const [autoSyncError, setAutoSyncError] = useState<string | null>(null);
+  const [lastAutoSyncAt, setLastAutoSyncAt] = useState<number | null>(null);
+
+  const latestConfigsRef = useRef<ProjectConfig[]>([]);
+  const autoSyncTimerRef = useRef<number | null>(null);
+  const syncInFlightRef = useRef(false);
+  const pendingResyncRef = useRef(false);
+  const configDirtyRef = useRef(false);
 
   const [filterLocal, setFilterLocal] = useState('');
   const [filterOperation, setFilterOperation] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const editableConfigs = useMemo(
-    () => configs.filter((config) => config.field?.type !== 'COMPUTED'),
-    [configs],
-  );
+  useEffect(() => {
+    latestConfigsRef.current = configs;
+  }, [configs]);
+
+  useEffect(() => {
+    return () => {
+      if (autoSyncTimerRef.current !== null) {
+        window.clearTimeout(autoSyncTimerRef.current);
+      }
+    };
+  }, []);
+
+  const parseApiErrorMessage = (error: unknown, fallback: string) => {
+    const apiError = error as AxiosError<{ message?: string | string[] }>;
+    const backendMessage = apiError.response?.data?.message;
+    if (Array.isArray(backendMessage)) return backendMessage.join(' ');
+    return backendMessage || fallback;
+  };
+
+  const mapProjectConfigs = (list: any[]): ProjectConfig[] =>
+    list.map((config: any) => ({
+      id: config.id,
+      fieldId: config.fieldId,
+      value: config.value ?? '',
+      field: config.field,
+    }));
+
+  const performAutoSync = async () => {
+    if (!reqId) return;
+    if (!configDirtyRef.current) return;
+
+    if (syncInFlightRef.current) {
+      pendingResyncRef.current = true;
+      return;
+    }
+
+    syncInFlightRef.current = true;
+    configDirtyRef.current = false;
+    setSavingConfigs(true);
+    setAutoFilling(true);
+    setAutoSyncError(null);
+
+    try {
+      const editable = latestConfigsRef.current.filter((config) => config.field?.type !== 'COMPUTED');
+      const saveResponse = await api.put(`/requisitions/${reqId}/project-configs`, {
+        configs: editable.map((config) => ({
+          fieldId: config.fieldId,
+          value: config.value ?? '',
+        })),
+      });
+
+      const updatedConfigs = mapProjectConfigs(saveResponse.data || []);
+      latestConfigsRef.current = updatedConfigs;
+      setConfigs(updatedConfigs);
+
+      const autoFillResponse = await api.post(`/requisitions/${reqId}/items/auto-fill`);
+      setRows(autoFillResponse.data || []);
+      setLastAutoSyncAt(Date.now());
+    } catch (error) {
+      console.error('Failed to auto sync project configuration', error);
+      const message = parseApiErrorMessage(error, 'Erro na sincronizacao automatica.');
+      setAutoSyncError(message);
+    } finally {
+      setSavingConfigs(false);
+      setAutoFilling(false);
+      syncInFlightRef.current = false;
+
+      if (pendingResyncRef.current || configDirtyRef.current) {
+        pendingResyncRef.current = false;
+        void performAutoSync();
+      }
+    }
+  };
+
+  const scheduleAutoSync = () => {
+    if (autoSyncTimerRef.current !== null) {
+      window.clearTimeout(autoSyncTimerRef.current);
+    }
+
+    autoSyncTimerRef.current = window.setTimeout(() => {
+      void performAutoSync();
+    }, 700);
+  };
 
   const loadAll = async () => {
     if (!reqId) return;
+
+    if (autoSyncTimerRef.current !== null) {
+      window.clearTimeout(autoSyncTimerRef.current);
+      autoSyncTimerRef.current = null;
+    }
 
     setLoading(true);
     try {
@@ -79,21 +170,15 @@ export default function RequisitionGrid() {
       ]);
 
       setRows(itemsResponse.data || []);
-      setConfigs(
-        (configsResponse.data || []).map((config: any) => ({
-          id: config.id,
-          fieldId: config.fieldId,
-          value: config.value ?? '',
-          field: config.field,
-        })),
-      );
+      const loadedConfigs = mapProjectConfigs(configsResponse.data || []);
+      latestConfigsRef.current = loadedConfigs;
+      setConfigs(loadedConfigs);
+      configDirtyRef.current = false;
+      pendingResyncRef.current = false;
+      setAutoSyncError(null);
     } catch (error) {
       console.error('Failed to fetch requisition data', error);
-      const apiError = error as AxiosError<{ message?: string | string[] }>;
-      const backendMessage = apiError.response?.data?.message;
-      const errorMessage = Array.isArray(backendMessage)
-        ? backendMessage.join(' ')
-        : backendMessage || 'Erro ao carregar requisicao.';
+      const errorMessage = parseApiErrorMessage(error, 'Erro ao carregar requisicao.');
       alert(errorMessage);
     } finally {
       setLoading(false);
@@ -194,37 +279,15 @@ export default function RequisitionGrid() {
   };
 
   const handleConfigChange = (fieldId: string, value: string) => {
+    configDirtyRef.current = true;
+    if (syncInFlightRef.current) {
+      pendingResyncRef.current = true;
+    }
+
     setConfigs((previous) =>
       previous.map((config) => (config.fieldId === fieldId ? { ...config, value } : config)),
     );
-  };
-
-  const handleSaveConfigs = async () => {
-    if (!reqId) return;
-
-    try {
-      setSavingConfigs(true);
-      const response = await api.put(`/requisitions/${reqId}/project-configs`, {
-        configs: editableConfigs.map((config) => ({
-          fieldId: config.fieldId,
-          value: config.value ?? '',
-        })),
-      });
-
-      setConfigs(
-        (response.data || []).map((config: any) => ({
-          id: config.id,
-          fieldId: config.fieldId,
-          value: config.value ?? '',
-          field: config.field,
-        })),
-      );
-    } catch (error) {
-      console.error('Failed to save project configs', error);
-      alert('Erro ao salvar configuracoes de projeto.');
-    } finally {
-      setSavingConfigs(false);
-    }
+    scheduleAutoSync();
   };
 
   const parseOptions = (options: unknown): string[] => {
@@ -283,21 +346,6 @@ export default function RequisitionGrid() {
     );
   };
 
-  const handleAutoFill = async () => {
-    if (!reqId) return;
-
-    try {
-      setAutoFilling(true);
-      const response = await api.post(`/requisitions/${reqId}/items/auto-fill`);
-      setRows(response.data || []);
-    } catch (error) {
-      console.error('Failed to auto fill quantities', error);
-      alert('Erro ao auto preencher quantidades.');
-    } finally {
-      setAutoFilling(false);
-    }
-  };
-
   const handleExport = async () => {
     if (!reqId) return;
     await api.post(`/tasks/excel/${reqId}`);
@@ -314,27 +362,22 @@ export default function RequisitionGrid() {
             Requisicao {reqId?.slice(0, 10)}
           </Typography>
 
-          <Tooltip title="Salvar configuracoes do projeto">
-            <span>
-              <Button
-                variant="contained"
-                startIcon={<SaveIcon />}
-                onClick={handleSaveConfigs}
-                disabled={savingConfigs || loading}
-              >
-                {savingConfigs ? 'Salvando...' : 'Salvar configuracoes'}
-              </Button>
-            </span>
-          </Tooltip>
-
-          <Button
-            variant="outlined"
-            startIcon={<AutoAwesomeIcon />}
-            onClick={handleAutoFill}
-            disabled={autoFilling || loading}
+          <Typography
+            variant="body2"
+            sx={{
+              color: autoSyncError ? 'error.main' : 'text.secondary',
+              minWidth: { xs: 0, md: 260 },
+              textAlign: 'right',
+            }}
           >
-            {autoFilling ? 'Preenchendo...' : 'Auto preencher'}
-          </Button>
+            {savingConfigs || autoFilling
+              ? 'Sincronizando automaticamente...'
+              : autoSyncError
+                ? autoSyncError
+                : lastAutoSyncAt
+                  ? `Sincronizado as ${new Date(lastAutoSyncAt).toLocaleTimeString('pt-BR')}`
+                  : 'Sincronizacao automatica ativa'}
+          </Typography>
 
           <Button variant="outlined" onClick={handleExport} disabled={loading}>
             Gerar export
