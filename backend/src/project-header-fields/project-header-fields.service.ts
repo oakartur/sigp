@@ -60,6 +60,80 @@ export class ProjectHeaderFieldsService {
     return normalized;
   }
 
+  private normalizeFieldAlias(label: string): string {
+    return label
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .toLowerCase();
+  }
+
+  private getFormulaTokens(formula: string): string[] {
+    const unique = new Set<string>();
+    const regex = /\{\{\s*([^}]+)\s*\}\}|\{\s*([^{}]+)\s*\}/g;
+
+    let match: RegExpExecArray | null = regex.exec(formula);
+    while (match) {
+      const token = this.normalizeString(match[1] ?? match[2] ?? '');
+      if (token) unique.add(token);
+      match = regex.exec(formula);
+    }
+
+    return Array.from(unique);
+  }
+
+  private async validateFormulaReferences(
+    formulaExpression: string | null,
+    currentFieldId?: string,
+    currentFieldLabel?: string,
+  ) {
+    if (!formulaExpression) return;
+
+    const tokens = this.getFormulaTokens(formulaExpression);
+    if (tokens.length === 0) return;
+
+    const fields = await this.prisma.projectHeaderField.findMany({
+      where: currentFieldId
+        ? {
+            OR: [{ isActive: true }, { id: currentFieldId }],
+          }
+        : { isActive: true },
+      select: { id: true, label: true },
+    });
+
+    const tokenMatchesField = (token: string, field: { id: string; label: string }) => {
+      const tokenNormalized = token.toLowerCase();
+      const fieldLabelNormalized = field.label.toLowerCase();
+      return (
+        token === field.id ||
+        tokenNormalized === fieldLabelNormalized ||
+        this.normalizeFieldAlias(token) === this.normalizeFieldAlias(field.label)
+      );
+    };
+
+    const missingTokens: string[] = [];
+    for (const token of tokens) {
+      const referencedField = fields.find((field) => tokenMatchesField(token, field));
+      const isSelfReferenceByLabel =
+        !!currentFieldLabel && this.normalizeFieldAlias(token) === this.normalizeFieldAlias(currentFieldLabel);
+
+      if (referencedField?.id === currentFieldId || isSelfReferenceByLabel) {
+        throw new BadRequestException('Formula nao pode referenciar o proprio campo.');
+      }
+
+      if (!referencedField && !isSelfReferenceByLabel) {
+        missingTokens.push(token);
+      }
+    }
+
+    if (missingTokens.length > 0) {
+      throw new BadRequestException(
+        `Formula referencia campo(s) inexistente(s): ${missingTokens.join(', ')}.`,
+      );
+    }
+  }
+
   private normalizeFormulaExpression(formula?: string | null): string | null {
     const value = this.normalizeString(formula);
     if (!value) return null;
@@ -149,6 +223,7 @@ export class ProjectHeaderFieldsService {
       defaultValue: data.defaultValue,
       formulaExpression: data.formulaExpression,
     });
+    await this.validateFormulaReferences(payload.formulaExpression, undefined, payload.label);
 
     const existingField = await this.prisma.projectHeaderField.findFirst({
       where: { label: { equals: payload.label, mode: 'insensitive' } },
@@ -196,6 +271,7 @@ export class ProjectHeaderFieldsService {
       defaultValue,
       formulaExpression,
     });
+    await this.validateFormulaReferences(payload.formulaExpression, id, payload.label);
 
     const duplicated = await this.prisma.projectHeaderField.findFirst({
       where: {
