@@ -18,7 +18,7 @@ import {
   TextField,
   CircularProgress
 } from '@mui/material';
-import { Add as AddIcon, Logout as LogoutIcon, FolderOpen as FolderIcon } from '@mui/icons-material';
+import { Add as AddIcon, Logout as LogoutIcon, FolderOpen as FolderIcon, Settings as SettingsIcon } from '@mui/icons-material';
 import { AuthContext, api } from '../context/AuthContext';
 
 interface Project {
@@ -89,6 +89,11 @@ export default function Dashboard() {
             <Typography variant="body2" color="text.secondary">
               {user?.email} ({user?.role})
             </Typography>
+            {user?.role === 'ADMIN' && (
+              <IconButton color="primary" onClick={() => navigate('/settings/header-fields')} title="Configurações">
+                <SettingsIcon />
+              </IconButton>
+            )}
             <IconButton color="secondary" onClick={handleLogout} title="Sair">
               <LogoutIcon />
             </IconButton>

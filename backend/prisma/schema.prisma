@@ -104,3 +104,15 @@ model RequisitionItem {
 
   @@index([requisitionId])
 }
+
+// ---------------------------------------------------------------------------
+// 5. CAMPOS DO CABEÇALHO DE PROJETO (ABA GERAL)
+// ---------------------------------------------------------------------------
+model ProjectHeaderField {
+  id        String   @id @default(uuid())
+  label     String   // Nome do campo (ex: "Loja", "Versão", etc.)
+  sortOrder Int      @default(0) // Ordem de exibição
+  isActive  Boolean  @default(true) // Soft delete
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

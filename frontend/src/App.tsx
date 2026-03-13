@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ProjectRequisitions from './pages/ProjectRequisitions';
 import RequisitionGrid from './pages/RequisitionGrid';
+import ProjectHeaderConfig from './pages/ProjectHeaderConfig';
 import PrivateRoute from './components/PrivateRoute';
 
 // Paleta de Cores Premium Elegante Requisitada nas Instruções Mestre
@@ -62,6 +63,15 @@ function App() {
                 </PrivateRoute>
               } 
             />
+
+            <Route 
+              path="/settings/header-fields" 
+              element={
+                <PrivateRoute>
+                  <ProjectHeaderConfig />
+                </PrivateRoute>
+              } 
+            />
             
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
@@ -72,3 +82,4 @@ function App() {
 }
 
 export default App;
+

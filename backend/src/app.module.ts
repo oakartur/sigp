@@ -8,6 +8,7 @@ import { FormulasModule } from './formulas/formulas.module';
 import { ProjectsModule } from './projects/projects.module';
 import { TasksModule } from './tasks/tasks.module';
 import { RequisitionsModule } from './requisitions/requisitions.module';
+import { ProjectHeaderFieldsModule } from './project-header-fields/project-header-fields.module';
 
 @Module({
   imports: [
@@ -26,6 +27,8 @@ import { RequisitionsModule } from './requisitions/requisitions.module';
     ProjectsModule,
     RequisitionsModule,
     TasksModule,
+    ProjectHeaderFieldsModule,
   ],
 })
 export class AppModule {}
+
