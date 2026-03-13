@@ -304,22 +304,11 @@ export default function ProjectRequisitions() {
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
                         {isAdminOrQuantifier && (
-                          <>
-                            <Tooltip title="Editar versao">
-                              <IconButton size="small" color="primary" onClick={() => openEditVersionDialog(requisition)}>
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Button
-                              variant="outlined"
-                              size="small"
-                              startIcon={<SnapshotIcon />}
-                              onClick={() => openCloneDialog(requisition.id)}
-                              disabled={actionLoading}
-                            >
-                              Clonar
-                            </Button>
-                          </>
+                          <Tooltip title="Editar versao">
+                            <IconButton size="small" color="primary" onClick={() => openEditVersionDialog(requisition)}>
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         )}
                         {user?.role === 'ADMIN' && (
                           <Tooltip title="Excluir requisicao">
@@ -334,6 +323,17 @@ export default function ProjectRequisitions() {
                               </IconButton>
                             </span>
                           </Tooltip>
+                        )}
+                        {isAdminOrQuantifier && (
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<SnapshotIcon />}
+                            onClick={() => openCloneDialog(requisition.id)}
+                            disabled={actionLoading}
+                          >
+                            Clonar
+                          </Button>
                         )}
                         <Button variant="contained" size="small" onClick={() => navigate(`/requisition/${requisition.id}`)}>
                           Abrir

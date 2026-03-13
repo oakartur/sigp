@@ -372,6 +372,7 @@ export default function CatalogsConfig() {
         `Operacoes criadas: ${data.operationsCreated ?? 0}`,
         `Equipamentos criados: ${data.equipmentsCreated ?? 0}`,
         `Equipamentos atualizados: ${data.equipmentsUpdated ?? 0}`,
+        `Duplicados ignorados: ${data.duplicatesSkipped ?? 0}`,
         `Linhas ignoradas: ${data.rowsSkipped ?? 0}`,
       ].join('\n');
       alert(`Importacao concluida.\n\n${message}`);

@@ -267,8 +267,10 @@ export class CatalogService {
     let operationsCreated = 0;
     let equipmentsCreated = 0;
     let equipmentsUpdated = 0;
+    let duplicatesSkipped = 0;
     let rowsSkipped = 0;
     const errors: string[] = [];
+    const seenImportKeys = new Set<string>();
 
     for (let index = 0; index < rows.length; index++) {
       const rowNumber = index + 2;
@@ -285,6 +287,14 @@ export class CatalogService {
         const operationNorm = this.normalizeKey(row.operation);
         const codeNorm = this.normalizeKey(row.code);
         const descNorm = this.normalizeKey(row.description);
+        const importDedupKey = `${localNorm}::${operationNorm}::${codeNorm}::${descNorm}`;
+
+        if (seenImportKeys.has(importDedupKey)) {
+          rowsSkipped++;
+          duplicatesSkipped++;
+          continue;
+        }
+        seenImportKeys.add(importDedupKey);
 
         const existingLocals = await this.prisma.localCatalog.findMany({
           where: { isActive: true },
@@ -328,6 +338,26 @@ export class CatalogService {
           where: { operationId: operation.id },
           orderBy: { sortOrder: 'asc' },
         });
+
+        const exactEquipment = existingEquipments.find((item) => {
+          const itemCode = this.normalizeKey(item.code || '');
+          const itemDesc = this.normalizeKey(item.description || '');
+          return itemCode === codeNorm && itemDesc === descNorm;
+        });
+
+        if (exactEquipment) {
+          if (!exactEquipment.isActive) {
+            await this.prisma.equipmentCatalog.update({
+              where: { id: exactEquipment.id },
+              data: { isActive: true },
+            });
+            equipmentsUpdated++;
+          } else {
+            rowsSkipped++;
+            duplicatesSkipped++;
+          }
+          continue;
+        }
 
         const equipment = existingEquipments.find((item) => {
           const itemCode = this.normalizeKey(item.code || '');
@@ -376,6 +406,7 @@ export class CatalogService {
     return {
       rowsProcessed: rows.length,
       rowsSkipped,
+      duplicatesSkipped,
       localsCreated,
       operationsCreated,
       equipmentsCreated,
