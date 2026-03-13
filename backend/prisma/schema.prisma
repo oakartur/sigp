@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,9 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ---------------------------------------------------------------------------
-// 1. USUÁRIOS E RBAC
-// ---------------------------------------------------------------------------
 enum Role {
   QUANTIFIER
   MANAGER
@@ -21,30 +15,24 @@ enum Role {
 }
 
 model User {
-  id             String    @id @default(uuid())
-  email          String    @unique
-  passwordHash   String    // Preparado para desacoplar no LDAP depois
-  role           Role      @default(QUANTIFIER)
+  id           String @id @default(uuid())
+  email        String @unique
+  passwordHash String
+  role         Role   @default(QUANTIFIER)
 }
 
-// ---------------------------------------------------------------------------
-// 2. FÓRMULAS
-// ---------------------------------------------------------------------------
 model Formula {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  expression  String   // Ex: "area * consumo_por_m2 * fator_perda"
-  isActive    Boolean  @default(true)
-  items       RequisitionItem[]
+  id         String            @id @default(uuid())
+  name       String            @unique
+  expression String
+  isActive   Boolean           @default(true)
+  items      RequisitionItem[]
 }
 
-// ---------------------------------------------------------------------------
-// 3. PROJETO E CABEÇALHO DA REQUISIÇÃO (SNAPSHOTS)
-// ---------------------------------------------------------------------------
 enum ReqStatus {
-  PENDING       // Nova versão criada, aguardando início
-  FILLING       // Sendo preenchida pelo Quantificador
-  COMPLETED     // Fechada. Se houver edição, gera nova versão.
+  PENDING
+  FILLING
+  COMPLETED
 }
 
 model Project {
@@ -54,65 +42,63 @@ model Project {
 }
 
 model Requisition {
-  id            String    @id @default(uuid())
-  projectId     String
-  project       Project   @relation(fields: [projectId], references: [id])
-  
-  version       Int       @default(1)    // V.1, V.2...
-  status        ReqStatus @default(PENDING)
-  isReadOnly    Boolean   @default(false) // Trava para versões antigas
-  
-  items         RequisitionItem[]
-
-  // Concorrência Otimista do Cabeçalho
-  versionLock   Int       @default(1) 
-
-  @@unique([projectId, version]) // Garante que não haja versões duplicadas pro mesmo projeto
+  id             String                     @id @default(uuid())
+  projectId      String
+  project        Project                    @relation(fields: [projectId], references: [id])
+  version        String                     @default("V1")
+  status         ReqStatus                  @default(PENDING)
+  isReadOnly     Boolean                    @default(false)
+  items          RequisitionItem[]
+  projectConfigs RequisitionProjectConfig[]
+  versionLock    Int                        @default(1)
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
 }
 
-// ---------------------------------------------------------------------------
-// 4. ITENS DA REQUISIÇÃO (LINE ITEMS)
-// ---------------------------------------------------------------------------
 enum ItemStatus {
   PENDING
   RECEIVED
 }
 
 model RequisitionItem {
-  id               String       @id @default(uuid())
+  id               String      @id @default(uuid())
   requisitionId    String
-  requisition      Requisition  @relation(fields: [requisitionId], references: [id])
-  
+  requisition      Requisition @relation(fields: [requisitionId], references: [id])
   equipmentName    String
-  
-  // --- MOTOR DE REGRAS E OVERRIDE ---
   formulaId        String?
-  formula          Formula?     @relation(fields: [formulaId], references: [id])
-  variablesPayload Json?        // Snapshot dos inputs do usuário (ex: {"area": 500, "perda": 1.05})
-  
-  calculatedValue  Float?       // Resultado gerado pelo backend (sandboxed)
-  overrideValue    Float?       // Inserido pelo ADMIN (se existir, sobrepõe o de cima no Front/Excel)
-  
-  // --- MÁQUINA DE ESTADOS DO RECEBIMENTO ---
-  status           ItemStatus   @default(PENDING)
+  formula          Formula?    @relation(fields: [formulaId], references: [id])
+  variablesPayload Json?
+  calculatedValue  Float?
+  overrideValue    Float?
+  status           ItemStatus  @default(PENDING)
   receivedAt       DateTime?
-  receivedById     String?      // Relaciona ao gerente que recebeu
-  observation      String?      // Sem @db.Text pois postgres aceita apenas String para Text ilimitado
-  
-  // Concorrência Otimista na granularidade do item
-  versionLock      Int          @default(1)
+  receivedById     String?
+  observation      String?
+  versionLock      Int         @default(1)
 
   @@index([requisitionId])
 }
 
-// ---------------------------------------------------------------------------
-// 5. CAMPOS DO CABEÇALHO DE PROJETO (ABA GERAL)
-// ---------------------------------------------------------------------------
 model ProjectHeaderField {
-  id        String   @id @default(uuid())
-  label     String   // Nome do campo (ex: "Loja", "Versão", etc.)
-  sortOrder Int      @default(0) // Ordem de exibição
-  isActive  Boolean  @default(true) // Soft delete
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String                     @id @default(uuid())
+  label              String
+  sortOrder          Int                        @default(0)
+  isActive           Boolean                    @default(true)
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  requisitionConfigs RequisitionProjectConfig[]
+}
+
+model RequisitionProjectConfig {
+  id            String             @id @default(uuid())
+  requisitionId String
+  requisition   Requisition        @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  fieldId       String
+  field         ProjectHeaderField @relation(fields: [fieldId], references: [id], onDelete: Restrict)
+  value         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@unique([requisitionId, fieldId])
+  @@index([requisitionId])
 }

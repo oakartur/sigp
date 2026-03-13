@@ -16,7 +16,11 @@ export class ProjectsService {
   async findOne(id: string) {
     return this.prisma.project.findUnique({
       where: { id },
-      include: { requisitions: true },
+      include: {
+        requisitions: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
     });
   }
 }

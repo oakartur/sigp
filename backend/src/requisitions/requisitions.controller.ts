@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Param, Put, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Body, Param, Put, UseGuards, Req, Get } from '@nestjs/common';
 import { RequisitionsService } from './requisitions.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -12,20 +12,47 @@ export class RequisitionsController {
 
   @Roles(Role.QUANTIFIER, Role.ADMIN)
   @Post('project/:projectId')
-  createInitial(@Param('projectId') projectId: string) {
-    return this.requisitionsService.createInitialRequisition(projectId);
+  createInitial(@Param('projectId') projectId: string, @Body() body: { version?: string }) {
+    return this.requisitionsService.createInitialRequisition(projectId, body?.version);
   }
 
   @Roles(Role.QUANTIFIER, Role.ADMIN)
   @Post(':id/snapshot')
-  createSnapshot(@Param('id') existingId: string) {
-    return this.requisitionsService.createSnapshot(existingId);
+  createSnapshot(@Param('id') existingId: string, @Body() body: { version?: string }) {
+    return this.requisitionsService.createSnapshot(existingId, body?.version);
+  }
+
+  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Put(':id/version')
+  updateVersion(@Param('id') id: string, @Body() body: { version: string }) {
+    return this.requisitionsService.updateVersion(id, body.version);
   }
 
   @Roles(Role.QUANTIFIER, Role.ADMIN)
   @Put(':id/complete')
   completeRequisition(@Param('id') id: string, @Body() body: { currentLock: number }) {
     return this.requisitionsService.completeRequisition(id, body.currentLock);
+  }
+
+  @Roles(Role.QUANTIFIER, Role.MANAGER, Role.AUDITOR, Role.ADMIN)
+  @Get(':reqId/items')
+  findItems(@Param('reqId') reqId: string) {
+    return this.requisitionsService.findItems(reqId);
+  }
+
+  @Roles(Role.QUANTIFIER, Role.MANAGER, Role.AUDITOR, Role.ADMIN)
+  @Get(':reqId/project-configs')
+  findProjectConfigs(@Param('reqId') reqId: string) {
+    return this.requisitionsService.findProjectConfigs(reqId);
+  }
+
+  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Put(':reqId/project-configs')
+  upsertProjectConfigs(
+    @Param('reqId') reqId: string,
+    @Body() body: { configs: Array<{ fieldId: string; value: string }> },
+  ) {
+    return this.requisitionsService.upsertProjectConfigs(reqId, body?.configs ?? []);
   }
 
   @Roles(Role.QUANTIFIER, Role.ADMIN)
@@ -45,7 +72,7 @@ export class RequisitionsController {
   receiveItem(
     @Param('itemId') itemId: string,
     @Body() body: { observation: string; currentLock: number },
-    @Req() req: any
+    @Req() req: any,
   ) {
     return this.requisitionsService.managerReceiveItem(itemId, req.user.id, body.observation, body.currentLock);
   }
