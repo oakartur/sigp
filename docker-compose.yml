@@ -6,12 +6,25 @@ services:
     image: postgres:15-alpine
     container_name: quant_db
     restart: unless-stopped
+    command: >-
+      postgres
+      -c wal_level=replica
+      -c archive_mode=on
+      -c archive_timeout=300
+      -c "archive_command=test ! -f /var/lib/postgresql/wal_archive/%f && cp %p /var/lib/postgresql/wal_archive/%f"
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_DB: ${DB_NAME:-sigp}
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - pg_wal_archive:/var/lib/postgresql/wal_archive
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-sigp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     networks:
       - app-network
 
@@ -22,89 +35,148 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     networks:
       - app-network
 
   # ---------------------------------------------------------
-  # BACKUP AUTOMATIZADO (SIDECAR DO BANCO)
+  # BACKUP/RETENCAO/RESTORE-TEST LOCAL (MESMA VM)
   # ---------------------------------------------------------
-  db-backup:
-    image: prodrigestivill/postgres-backup-local
-    container_name: quant_db_backup
+  db-maintenance:
+    build:
+      context: ./ops/backup
+      dockerfile: Dockerfile
+    container_name: quant_db_maintenance
     restart: unless-stopped
     depends_on:
-      - postgres-db
+      postgres-db:
+        condition: service_healthy
     environment:
-      POSTGRES_HOST: postgres-db
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
-      POSTGRES_DB: ${DB_NAME:-sigp}
-      SCHEDULE: "@daily"
-      BACKUP_KEEP_DAYS: 7
-      BACKUP_KEEP_WEEKS: 4
+      PGHOST: postgres-db
+      PGPORT: 5432
+      PGUSER: ${DB_USER:-postgres}
+      PGPASSWORD: ${DB_PASSWORD:-postgres}
+      PGDATABASE: ${DB_NAME:-sigp}
+      BACKUP_BASE_DIR: /backups
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_KEEP_WEEKS: ${BACKUP_KEEP_WEEKS:-8}
+      WAL_KEEP_DAYS: ${WAL_KEEP_DAYS:-7}
+      BACKUP_MAX_AGE_HOURS: ${BACKUP_MAX_AGE_HOURS:-8}
+      MAX_DISK_USAGE_PERCENT: ${MAX_DISK_USAGE_PERCENT:-80}
+      TZ: ${TZ:-America/Cuiaba}
     volumes:
       - db_backups:/backups
+      - pg_wal_archive:/backups/wal
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/sigp-backup/scripts/healthcheck.sh"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
     networks:
       - app-network
 
   # ---------------------------------------------------------
-  # CAMADA DE APLICAÇÃO (BACKEND & WORKERS)
+  # CAMADA DE APLICACAO (BACKEND & WORKERS)
   # ---------------------------------------------------------
+  api-migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: "no"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-db:5432/${DB_NAME:-sigp}
+    command: npx prisma migrate deploy
+    networks:
+      - app-network
+
   api-server:
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: quant_api
     restart: unless-stopped
     depends_on:
-      - postgres-db
-      - redis-queue
+      postgres-db:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+      db-maintenance:
+        condition: service_started
     environment:
       - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-db:5432/${DB_NAME:-sigp}
       - REDIS_HOST=redis-queue
       - REDIS_PORT=6379
       - NODE_ENV=production
+      - ALLOW_PUBLIC_REGISTER=${ALLOW_PUBLIC_REGISTER:-false}
+      - JWT_SECRET=${JWT_SECRET}
     ports:
       - "3000:3000"
-    command: sh -c "npx prisma migrate deploy && npm run start:prod"
+    command: npm run start:prod
+    healthcheck:
+      test: ["CMD", "node", "-e", "const net=require('net');const s=net.connect(3000,'127.0.0.1');s.on('connect',()=>process.exit(0));s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),3000);"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
     networks:
       - app-network
 
   queue-worker:
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: quant_worker
     restart: unless-stopped
     depends_on:
-      - postgres-db
-      - redis-queue
+      postgres-db:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres-db:5432/${DB_NAME:-sigp}
       - REDIS_HOST=redis-queue
       - REDIS_PORT=6379
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
       - NODE_ENV=production
-    command: npm run start:worker 
+      - JWT_SECRET=${JWT_SECRET}
+    command: npm run start:worker
     networks:
       - app-network
 
   # ---------------------------------------------------------
-  # CAMADA DE APRESENTAÇÃO (FRONTEND)
+  # CAMADA DE APRESENTACAO (FRONTEND)
   # ---------------------------------------------------------
   web-frontend:
-    build: 
+    build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - VITE_API_URL=/sigp-api  # Injetado em build-time pelo Vite (import.meta.env)
+        - VITE_API_URL=/sigp-api
     container_name: quant_frontend
     restart: unless-stopped
     ports:
       - "8080:80"
     depends_on:
-      - api-server
+      api-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/sigp/ >/dev/null 2>&1 || wget -qO- http://127.0.0.1/ >/dev/null 2>&1"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     networks:
       - app-network
 
@@ -116,3 +188,4 @@ volumes:
   pg_data:
   redis_data:
   db_backups:
+  pg_wal_archive:

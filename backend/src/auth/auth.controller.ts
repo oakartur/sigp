@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Body, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { Role } from '@prisma/client';
 
@@ -17,7 +17,11 @@ export class AuthController {
 
   @Post('register')
   async register(@Body() body: any) {
-    // Apenas para setup inicial do sistema
+    const allowPublicRegister = String(process.env.ALLOW_PUBLIC_REGISTER || 'false').toLowerCase() === 'true';
+    if (!allowPublicRegister) {
+      throw new ForbiddenException('Registro publico desabilitado neste ambiente.');
+    }
+
     return this.authService.registerUser({
       email: body.email,
       passwordHash: body.password,

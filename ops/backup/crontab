@@ -1,0 +1,17 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Backup logico local a cada 6 horas
+0 */6 * * * /opt/sigp-backup/scripts/backup_local.sh >> /backups/logs/cron.log 2>&1
+
+# Backup semanal completo (domingo 00:15)
+15 0 * * 0 /opt/sigp-backup/scripts/backup_weekly.sh >> /backups/logs/cron.log 2>&1
+
+# Prune de backups e WAL diariamente
+30 0 * * * /opt/sigp-backup/scripts/prune_backups.sh >> /backups/logs/cron.log 2>&1
+
+# Teste de restore semanal (domingo 00:45)
+45 0 * * 0 /opt/sigp-backup/scripts/restore_test.sh >> /backups/logs/cron.log 2>&1
+
+# Healthcheck operacional a cada hora
+0 * * * * /opt/sigp-backup/scripts/healthcheck.sh >> /backups/logs/health.log 2>&1

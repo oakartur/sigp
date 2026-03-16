@@ -682,6 +682,7 @@ Os testes usam **Jest + NestJS Testing Module** com mocks dos serviços de depen
 | [`deploy.sh`](./deploy.sh)                                   | Script de deploy para produção (Ubuntu 22.04) |
 | [`backend/prisma/schema.prisma`](./backend/prisma/schema.prisma) | Schema completo do banco de dados         |
 | [`.env`](./.env)                                             | Variáveis de ambiente (não comitar em produção!) |
+| [`ops/backup/README.md`](./ops/backup/README.md)             | Operação de backup/restore local (mesma VM)      |
 
 ---
 

@@ -1,44 +1,74 @@
 #!/bin/bash
-set -e  # Para imediatamente se qualquer comando falhar
+set -euo pipefail
 
-# Script de Deploy - SIGP (Sistema de Quantificação e Recebimento)
-# Destinado a rodar na VM Ubuntu 22.04
+echo "Iniciando deploy do SIGP..."
 
-echo "🚀 Iniciando o deploy do SIGP..."
+wait_for_health() {
+  local service="$1"
+  local timeout_seconds="${2:-180}"
+  local elapsed=0
 
-# 1. Parar serviços em execução (se houver) e remover containers órfãos
-# IMPORTANTE: NÃO usar --volumes aqui para preservar os dados do banco (pg_data)!
-echo "📦 Parando serviços em execução..."
+  echo "Aguardando healthcheck de '${service}'..."
+  while true; do
+    local container_id
+    container_id="$(docker compose ps -q "${service}" 2>/dev/null | head -n1)"
+    if [[ -z "${container_id}" ]]; then
+      sleep 3
+      elapsed=$((elapsed + 3))
+      if [[ ${elapsed} -ge ${timeout_seconds} ]]; then
+        echo "Timeout aguardando container de '${service}'."
+        docker compose ps
+        exit 1
+      fi
+      continue
+    fi
+
+    local status
+    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container_id}" 2>/dev/null || true)"
+
+    if [[ "${status}" == "healthy" ]]; then
+      echo "Servico '${service}' saudavel."
+      break
+    fi
+
+    sleep 5
+    elapsed=$((elapsed + 5))
+    if [[ ${elapsed} -ge ${timeout_seconds} ]]; then
+      echo "Timeout aguardando '${service}' ficar healthy."
+      docker compose ps
+      exit 1
+    fi
+  done
+}
+
+echo "Parando stack atual..."
 docker compose down --remove-orphans || true
 
-# 2. Subir apenas os serviços de infraestrutura (Banco de Dados e Redis)
-echo "🗄️  Iniciando PostgreSQL e Redis..."
-docker compose up -d postgres-db redis-queue
+echo "Buildando imagens de backend, frontend e manutencao..."
+docker compose build api-server queue-worker web-frontend db-maintenance
 
-# 3. Aguardar o banco de dados aceitar conexões
-echo "⏳ Aguardando o start do PostgreSQL (15 segundos)..."
-sleep 15
+echo "Subindo banco, redis e manutencao..."
+docker compose up -d postgres-db redis-queue db-maintenance
 
-# 4. Construir as imagens locais e rodar as Migrações do Prisma
-echo "🔄 Construindo imagem do backend..."
-docker compose build api-server
+wait_for_health postgres-db 180
+wait_for_health redis-queue 120
+wait_for_health db-maintenance 300
 
-echo "🔄 Executando migrações do Prisma..."
-docker compose run --rm api-server npx prisma migrate deploy
+echo "Executando migracoes Prisma (job dedicado)..."
+docker compose run --rm api-migrate
 
-# 5. Subir o restante da stack (API, Worker, Frontend, Backup)
-echo "🏗️  Construindo e iniciando todos os serviços..."
-docker compose up -d --build
+echo "Subindo API, worker e frontend..."
+docker compose up -d api-server queue-worker web-frontend
 
-# 6. Limpar imagens soltas e recursos não utilizados
-echo "🧹 Limpando imagens docker órfãs..."
+wait_for_health api-server 180
+wait_for_health web-frontend 180
+
+echo "Limpando imagens dangling..."
 docker image prune -f
 
 echo ""
-echo "✅ Deploy concluído com sucesso!"
-echo "➡️  Acesse o Frontend (via Nginx Proxy): http://<IP_DA_VM>:1180/sigp/"
-echo "➡️  Acesse a API (via Nginx Proxy): http://<IP_DA_VM>:1180/sigp-api/"
-echo "⚠️  As portas originais 8080 e 3000 provavelmente estão bloqueadas pelo firewall da rede."
+echo "Deploy concluido com sucesso."
+echo "Frontend: http://<IP_DA_VM>:1180/sigp/"
+echo "API:      http://<IP_DA_VM>:1180/sigp-api/"
 echo ""
-echo "📋 Status dos containers:"
 docker compose ps
