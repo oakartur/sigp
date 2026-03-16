@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FormulasService } from '../formulas/formulas.service';
-import { Prisma, ProjectHeaderFieldType, RequisitionItem } from '@prisma/client';
+import { Prisma, ProjectHeaderFieldType, ReqStatus, RequisitionItem } from '@prisma/client';
 import * as math from 'mathjs';
 
 type ConfigWithField = Prisma.RequisitionProjectConfigGetPayload<{
@@ -101,6 +101,96 @@ export class RequisitionsService {
     }
 
     return result;
+  }
+
+  private normalizeLooseKey(value?: string | null): string {
+    return this.normalizeText(value)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '')
+      .toLowerCase();
+  }
+
+  private isStatusProjectField(label: string): boolean {
+    return this.normalizeLooseKey(label) === 'statusdarequisicao';
+  }
+
+  private parseReqStatusFromText(value?: string | null): ReqStatus | null {
+    const key = this.normalizeLooseKey(value);
+    if (!key) return null;
+
+    const pending = new Set(['pending', 'pendente', 'aberta', 'aberto']);
+    const filling = new Set(['filling', 'preenchimento', 'empreenchimento', 'andamento', 'emandamento']);
+    const completed = new Set(['completed', 'concluida', 'concluido', 'finalizada', 'finalizado', 'completa']);
+
+    if (pending.has(key)) return ReqStatus.PENDING;
+    if (filling.has(key)) return ReqStatus.FILLING;
+    if (completed.has(key)) return ReqStatus.COMPLETED;
+    return null;
+  }
+
+  private toStatusFieldValue(status: ReqStatus, fieldOptions: unknown, currentValue?: string | null): string {
+    const normalizedCurrent = this.normalizeText(currentValue);
+    if (normalizedCurrent && this.parseReqStatusFromText(normalizedCurrent) === status) {
+      return normalizedCurrent;
+    }
+
+    const options = this.parseSelectOptions(fieldOptions);
+    for (const option of options) {
+      if (this.parseReqStatusFromText(option) === status) {
+        return option;
+      }
+    }
+
+    if (status === ReqStatus.PENDING) return 'Pending';
+    if (status === ReqStatus.FILLING) return 'Filling';
+    return 'Completed';
+  }
+
+  private async syncRequisitionStatusWithProjectConfig(tx: Prisma.TransactionClient, requisitionId: string) {
+    const requisition = await tx.requisition.findUnique({
+      where: { id: requisitionId },
+      select: { id: true, status: true, isReadOnly: true },
+    });
+    if (!requisition) {
+      throw new NotFoundException('Requisicao nao encontrada.');
+    }
+
+    const configs = await tx.requisitionProjectConfig.findMany({
+      where: { requisitionId, field: { isActive: true } },
+      include: { field: true },
+      orderBy: [{ field: { sortOrder: 'asc' } }],
+    });
+
+    const statusConfig = configs.find((config) => this.isStatusProjectField(config.field.label));
+    if (!statusConfig) {
+      return;
+    }
+
+    const statusFromConfig = this.parseReqStatusFromText(statusConfig.value);
+    let currentStatus = requisition.status;
+
+    if (statusFromConfig && statusFromConfig !== requisition.status) {
+      await tx.requisition.update({
+        where: { id: requisitionId },
+        data: {
+          status: statusFromConfig,
+          ...(statusFromConfig === ReqStatus.COMPLETED ? { isReadOnly: true } : {}),
+          ...(statusFromConfig !== ReqStatus.COMPLETED && requisition.status === ReqStatus.COMPLETED
+            ? { isReadOnly: false }
+            : {}),
+        },
+      });
+      currentStatus = statusFromConfig;
+    }
+
+    const desiredConfigValue = this.toStatusFieldValue(currentStatus, statusConfig.field.options, statusConfig.value);
+    if (this.normalizeText(statusConfig.value) !== this.normalizeText(desiredConfigValue)) {
+      await tx.requisitionProjectConfig.update({
+        where: { id: statusConfig.id },
+        data: { value: desiredConfigValue },
+      });
+    }
   }
 
   private getFieldDefaultValue(field: {
@@ -398,6 +488,7 @@ export class RequisitionsService {
     }
 
     await this.recomputeComputedProjectConfigs(tx, requisitionId);
+    await this.syncRequisitionStatusWithProjectConfig(tx, requisitionId);
 
     return tx.requisitionProjectConfig.findMany({
       where: {
@@ -412,7 +503,7 @@ export class RequisitionsService {
   private async syncCatalogItemsForRequisition(tx: Prisma.TransactionClient, requisitionId: string) {
     const requisition = await tx.requisition.findUnique({
       where: { id: requisitionId },
-      select: { id: true },
+      select: { id: true, status: true },
     });
     if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
 
@@ -433,17 +524,32 @@ export class RequisitionsService {
       },
     });
 
-    if (equipments.length === 0) return;
-
     const existingItems = await tx.requisitionItem.findMany({
       where: {
         requisitionId,
         equipmentCatalogId: { not: null },
       },
       select: {
+        id: true,
         equipmentCatalogId: true,
+        localName: true,
+        operationName: true,
+        equipmentCode: true,
+        equipmentName: true,
+        manualQuantity: true,
       },
     });
+
+    if (equipments.length === 0) {
+      if (requisition.status === ReqStatus.PENDING && existingItems.length > 0) {
+        await tx.requisitionItem.deleteMany({
+          where: { id: { in: existingItems.map((item) => item.id) } },
+        });
+      }
+      return;
+    }
+
+    const equipmentByCatalogId = new Map(equipments.map((equipment) => [equipment.id, equipment]));
     const existingCatalogIds = new Set(
       existingItems
         .map((item) => item.equipmentCatalogId)
@@ -462,20 +568,69 @@ export class RequisitionsService {
         return a.sortOrder - b.sortOrder;
       });
 
-    if (missingEquipments.length === 0) return;
+    if (missingEquipments.length > 0) {
+      await tx.requisitionItem.createMany({
+        data: missingEquipments.map((equipment) => ({
+          requisitionId,
+          equipmentCatalogId: equipment.id,
+          localName: equipment.operation.local.name,
+          operationName: equipment.operation.name,
+          equipmentCode: equipment.code,
+          equipmentName: equipment.description,
+          manualQuantity: equipment.baseQuantity,
+          status: 'PENDING' as const,
+        })),
+      });
+    }
 
-    await tx.requisitionItem.createMany({
-      data: missingEquipments.map((equipment) => ({
-        requisitionId,
-        equipmentCatalogId: equipment.id,
-        localName: equipment.operation.local.name,
-        operationName: equipment.operation.name,
-        equipmentCode: equipment.code,
-        equipmentName: equipment.description,
-        manualQuantity: equipment.baseQuantity,
-        status: 'PENDING' as const,
-      })),
-    });
+    if (requisition.status !== ReqStatus.PENDING) {
+      return;
+    }
+
+    const activeCatalogIds = new Set(equipments.map((equipment) => equipment.id));
+    const staleItemIds = existingItems
+      .filter((item) => item.equipmentCatalogId && !activeCatalogIds.has(item.equipmentCatalogId))
+      .map((item) => item.id);
+
+    if (staleItemIds.length > 0) {
+      await tx.requisitionItem.deleteMany({
+        where: { id: { in: staleItemIds } },
+      });
+    }
+
+    for (const item of existingItems) {
+      const catalogId = item.equipmentCatalogId;
+      if (!catalogId || !activeCatalogIds.has(catalogId)) {
+        continue;
+      }
+
+      const equipment = equipmentByCatalogId.get(catalogId);
+      if (!equipment) continue;
+
+      const shouldBackfillManualQuantity = item.manualQuantity === null;
+      const nextManualQuantity = shouldBackfillManualQuantity ? equipment.baseQuantity : item.manualQuantity;
+
+      const needsUpdate =
+        item.localName !== equipment.operation.local.name ||
+        item.operationName !== equipment.operation.name ||
+        item.equipmentCode !== equipment.code ||
+        item.equipmentName !== equipment.description ||
+        (shouldBackfillManualQuantity && nextManualQuantity !== item.manualQuantity);
+
+      if (!needsUpdate) continue;
+
+      await tx.requisitionItem.update({
+        where: { id: item.id },
+        data: {
+          localName: equipment.operation.local.name,
+          operationName: equipment.operation.name,
+          equipmentCode: equipment.code,
+          equipmentName: equipment.description,
+          ...(shouldBackfillManualQuantity ? { manualQuantity: nextManualQuantity } : {}),
+          versionLock: { increment: 1 },
+        },
+      });
+    }
   }
 
   async createInitialRequisition(projectId: string, version?: string) {
@@ -507,13 +662,18 @@ export class RequisitionsService {
       throw new ConflictException('Conflito de concorrencia. Atualize a tela.');
     }
 
-    return this.prisma.requisition.update({
-      where: { id },
-      data: {
-        status: 'COMPLETED',
-        isReadOnly: true,
-        versionLock: { increment: 1 },
-      },
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.requisition.update({
+        where: { id },
+        data: {
+          status: 'COMPLETED',
+          isReadOnly: true,
+          versionLock: { increment: 1 },
+        },
+      });
+
+      await this.syncRequisitionStatusWithProjectConfig(tx, id);
+      return updated;
     });
   }
 
