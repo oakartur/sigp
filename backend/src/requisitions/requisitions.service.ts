@@ -218,8 +218,7 @@ export class RequisitionsService {
     const withDecimalDot = withoutExcelPrefix.replace(/(\d)\s*,\s*(\d)/g, '$1.$2');
     const withEq = withDecimalDot.replace(/(?<![<>=!])=(?!=)/g, '==');
     const withEqFunctions = this.rewriteEqualityOperators(withEq);
-    const withTernary = this.rewriteIfCallsToTernary(withEqFunctions);
-    return this.unwrapMalformedIfWrapper(withTernary);
+    return this.unwrapMalformedIfWrapper(withEqFunctions);
   }
 
   private rewriteEqualityOperators(expression: string): string {
