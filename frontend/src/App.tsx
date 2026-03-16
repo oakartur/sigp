@@ -7,6 +7,7 @@ import ProjectRequisitions from './pages/ProjectRequisitions';
 import RequisitionGrid from './pages/RequisitionGrid';
 import ProjectHeaderConfig from './pages/ProjectHeaderConfig';
 import CatalogsConfig from './pages/CatalogsConfig';
+import SystemSettings from './pages/SystemSettings';
 import PrivateRoute from './components/PrivateRoute';
 
 const theme = createTheme({
@@ -160,6 +161,15 @@ function App() {
               element={
                 <PrivateRoute>
                   <RequisitionGrid />
+                </PrivateRoute>
+              }
+            />
+
+            <Route
+              path="/settings/system"
+              element={
+                <PrivateRoute allowedRoles={['ADMIN']}>
+                  <SystemSettings />
                 </PrivateRoute>
               }
             />

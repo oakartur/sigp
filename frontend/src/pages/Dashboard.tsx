@@ -19,7 +19,6 @@ import {
   Stack,
   TextField,
   Toolbar,
-  Tooltip,
   Typography,
 } from '@mui/material';
 import {
@@ -166,13 +165,9 @@ export default function Dashboard() {
                   </>
                 )}
                 {isAdmin && (
-                  <Tooltip title="Configuracoes de sistema em breve">
-                    <span>
-                      <Button variant="outlined" disabled startIcon={<SettingsIcon />}>
-                        Configuracao
-                      </Button>
-                    </span>
-                  </Tooltip>
+                  <Button variant="outlined" startIcon={<SettingsIcon />} onClick={() => navigate('/settings/system')}>
+                    Configuracao
+                  </Button>
                 )}
                 {canCreateProject && (
                   <Button variant="contained" startIcon={<AddIcon />} onClick={() => setOpenModal(true)}>

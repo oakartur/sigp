@@ -10,6 +10,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { RequisitionsModule } from './requisitions/requisitions.module';
 import { ProjectHeaderFieldsModule } from './project-header-fields/project-header-fields.module';
 import { CatalogModule } from './catalog/catalog.module';
+import { SystemSettingsModule } from './system-settings/system-settings.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { CatalogModule } from './catalog/catalog.module';
     TasksModule,
     ProjectHeaderFieldsModule,
     CatalogModule,
+    SystemSettingsModule,
   ],
 })
 export class AppModule {}
