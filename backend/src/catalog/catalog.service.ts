@@ -52,6 +52,12 @@ export class CatalogService {
       .replace(/[；]/g, ';');
   }
 
+  private normalizeDecimalCommas(expression: string): string {
+    // Converte apenas numero com virgula decimal (ex.: 1,1 -> 1.1),
+    // sem tocar em separadores de argumentos (ex.: arred(1.1,0)).
+    return expression.replace(/(?<![\d.])(\d+)\s*,\s*(\d+)(?![\d.])/g, '$1.$2');
+  }
+
   private splitTopLevelArgs(argsText: string): string[] {
     const args: string[] = [];
     let current = '';
@@ -219,7 +225,7 @@ export class CatalogService {
       .replace(/\binteiro\s*\(/gi, 'inteiro(')
       .replace(/\bint\s*\(/gi, 'int(');
     const withoutExcelPrefix = withFunctionAliases.replace(/^\s*=\s*/, '');
-    const withDecimalDot = withoutExcelPrefix.replace(/(\d)\s*,\s*(\d)/g, '$1.$2');
+    const withDecimalDot = this.normalizeDecimalCommas(withoutExcelPrefix);
     const withEq = withDecimalDot.replace(/(?<![<>=!])=(?!=)/g, '==');
     const withEqFunctions = this.rewriteEqualityOperators(withEq);
     return this.unwrapMalformedIfWrapper(withEqFunctions);
