@@ -44,7 +44,8 @@ export class CatalogService {
       .replace(/\bou\s*\(/gi, 'or(')
       .replace(/\be\s*\(/gi, 'and(')
       .replace(/;/g, ',');
-    const withEq = withIf.replace(/(?<![<>=!])=(?!=)/g, '==');
+    const withoutExcelPrefix = withIf.replace(/^\s*=\s*/, '');
+    const withEq = withoutExcelPrefix.replace(/(?<![<>=!])=(?!=)/g, '==');
     return this.rewriteEqualityOperators(withEq);
   }
 
@@ -695,6 +696,20 @@ export class CatalogService {
     return text;
   }
 
+  private toFormulaNumber(value: unknown): number {
+    const parsedValue = this.parseFormulaValue(value);
+    if (typeof parsedValue === 'number') return parsedValue;
+    if (typeof parsedValue === 'boolean') return parsedValue ? 1 : 0;
+
+    const text = String(parsedValue ?? '').trim().replace(',', '.');
+    const parsed = Number(text);
+    if (Number.isNaN(parsed)) {
+      throw new BadRequestException(`Cannot convert "${String(parsedValue)}" to a number.`);
+    }
+
+    return parsed;
+  }
+
   private isEqual(left: unknown, right: unknown): boolean {
     const a = this.parseFormulaValue(left);
     const b = this.parseFormulaValue(right);
@@ -743,6 +758,8 @@ export class CatalogService {
     if (/\bse\s*\(/i.test(original) || /\bif\s*\(/i.test(normalized)) commands.add('se()');
     if (/\bou\s*\(/i.test(original) || /\bor\s*\(/i.test(normalized)) commands.add('ou()');
     if (/\be\s*\(/i.test(original) || /\band\s*\(/i.test(normalized)) commands.add('e()');
+    if (/\barred\s*\(/i.test(original) || /\barred\s*\(/i.test(normalized)) commands.add('arred()');
+    if (/\binteiro\s*\(/i.test(original) || /\bint\s*\(/i.test(normalized)) commands.add('inteiro()');
 
     const fields = await this.prisma.projectHeaderField.findMany({
       where: { isActive: true },
@@ -781,6 +798,15 @@ export class CatalogService {
       e: (...args: unknown[]) => args.every((value) => Boolean(value)),
       or: (...args: unknown[]) => args.some((value) => Boolean(value)),
       ou: (...args: unknown[]) => args.some((value) => Boolean(value)),
+      inteiro: (value: unknown) => Math.trunc(this.toFormulaNumber(value)),
+      int: (value: unknown) => Math.trunc(this.toFormulaNumber(value)),
+      arred: (value: unknown, decimals?: unknown) => {
+        const base = this.toFormulaNumber(value);
+        if (decimals === undefined) return Math.trunc(base);
+        const precision = Math.trunc(this.toFormulaNumber(decimals));
+        const factor = Math.pow(10, precision);
+        return Math.round(base * factor) / factor;
+      },
       eq: (left: unknown, right: unknown) => this.isEqual(left, right),
       neq: (left: unknown, right: unknown) => !this.isEqual(left, right),
     };
@@ -809,25 +835,45 @@ export class CatalogService {
 
     const tokenBindings = new Map<string, unknown>();
     let tokenIndex = 0;
-    const expressionWithTokens = normalized.replace(
+    const fieldByNormalizedLabel = new Map<string, (typeof fields)[number]>();
+    for (const field of fields) {
+      fieldByNormalizedLabel.set(this.normalizeKey(field.label), field);
+    }
+
+    const bindToken = (value: unknown) => {
+      const varName = `__token_${tokenIndex++}`;
+      tokenBindings.set(varName, value);
+      return varName;
+    };
+
+    const withReferenceTokens = normalized.replace(
       /\{\{\s*([^}]+)\s*\}\}|\{\s*([^{}]+)\s*\}/g,
       (_match, tokenDouble, tokenSingle) => {
         const key = this.normalizeNullable(tokenDouble ?? tokenSingle);
-        const varName = `__token_${tokenIndex++}`;
 
         const directField =
           fieldLookup.get(key) ||
           fieldLookup.get(key.toLowerCase()) ||
           fieldLookup.get(this.normalizeFieldAlias(key));
         if (directField) {
-          tokenBindings.set(varName, resolveByField(directField));
+          return bindToken(resolveByField(directField));
         } else if (key in context) {
-          tokenBindings.set(varName, this.parseFormulaValue(context[key]));
+          return bindToken(this.parseFormulaValue(context[key]));
         } else {
-          tokenBindings.set(varName, '');
+          return bindToken('');
         }
+      },
+    );
 
-        return varName;
+    const expressionWithTokens = withReferenceTokens.replace(
+      /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g,
+      (quotedLiteral) => {
+        const raw = quotedLiteral.slice(1, -1);
+        const unescaped = raw.replace(/\\"/g, '"').replace(/\\'/g, "'");
+        const matchingField = fieldByNormalizedLabel.get(this.normalizeKey(unescaped));
+        if (!matchingField) return quotedLiteral;
+
+        return bindToken(resolveByField(matchingField));
       },
     );
 
@@ -869,6 +915,9 @@ export class CatalogService {
         'or',
         'e',
         'ou',
+        'inteiro',
+        'int',
+        'arred',
         'true',
         'false',
         'pi',

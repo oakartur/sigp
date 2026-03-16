@@ -40,7 +40,8 @@ export class RequisitionsService {
       .replace(/\bou\s*\(/gi, 'or(')
       .replace(/\be\s*\(/gi, 'and(')
       .replace(/;/g, ',');
-    const withEq = withIf.replace(/(?<![<>=!])=(?!=)/g, '==');
+    const withoutExcelPrefix = withIf.replace(/^\s*=\s*/, '');
+    const withEq = withoutExcelPrefix.replace(/(?<![<>=!])=(?!=)/g, '==');
     return this.rewriteEqualityOperators(withEq);
   }
 
@@ -83,6 +84,27 @@ export class RequisitionsService {
 
     const parsed = Number(normalized.replace(',', '.'));
     if (Number.isNaN(parsed)) return null;
+    return parsed;
+  }
+
+  private toFormulaNumber(value: unknown): number {
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) {
+        throw new BadRequestException('Numero invalido em formula.');
+      }
+      return value;
+    }
+
+    if (typeof value === 'boolean') {
+      return value ? 1 : 0;
+    }
+
+    const normalized = this.normalizeText(String(value ?? '')).replace(',', '.');
+    const parsed = Number(normalized);
+    if (Number.isNaN(parsed) || !Number.isFinite(parsed)) {
+      throw new BadRequestException(`Cannot convert "${String(value)}" to a number.`);
+    }
+
     return parsed;
   }
 
@@ -221,12 +243,22 @@ export class RequisitionsService {
       or: (...args: unknown[]) => args.some((value) => Boolean(value)),
       E: (...args: unknown[]) => args.every((value) => Boolean(value)),
       OU: (...args: unknown[]) => args.some((value) => Boolean(value)),
+      inteiro: (value: unknown) => Math.trunc(this.toFormulaNumber(value)),
+      int: (value: unknown) => Math.trunc(this.toFormulaNumber(value)),
+      arred: (value: unknown, decimals?: unknown) => {
+        const base = this.toFormulaNumber(value);
+        if (decimals === undefined) return Math.trunc(base);
+        const precision = Math.trunc(this.toFormulaNumber(decimals));
+        const factor = Math.pow(10, precision);
+        return Math.round(base * factor) / factor;
+      },
       eq: (left: unknown, right: unknown) => this.isEqual(left, right),
       neq: (left: unknown, right: unknown) => !this.isEqual(left, right),
     } as any;
 
     const valuesByFieldId = new Map<string, string | number | boolean>();
     const valuesByAlias = new Map<string, string | number | boolean>();
+    const valuesByLabel = new Map<string, string | number | boolean>();
 
     for (const config of configs) {
       const rawValue = this.normalizeText(config.value);
@@ -267,6 +299,7 @@ export class RequisitionsService {
       if (alias && !(alias in scope)) {
         scope[alias] = typedValue;
       }
+      valuesByLabel.set(this.normalizeText(config.field.label).toLowerCase(), typedValue);
 
       const idAlias = `f_${config.fieldId.replace(/[^a-zA-Z0-9]+/g, '_')}`;
       scope[idAlias] = typedValue;
@@ -287,6 +320,10 @@ export class RequisitionsService {
 
         throw new BadRequestException(`Token de formula nao encontrado: ${token}`);
       },
+      resolveQuotedFieldLabel: (label: string) => {
+        const key = this.normalizeText(label).toLowerCase();
+        return valuesByLabel.get(key);
+      },
     };
   }
 
@@ -296,15 +333,29 @@ export class RequisitionsService {
       throw new BadRequestException(`Formula vazia em ${context}.`);
     }
 
-    const { scope, resolveToken } = this.buildFormulaScope(configs);
+    const { scope, resolveToken, resolveQuotedFieldLabel } = this.buildFormulaScope(configs);
 
     let tokenIndex = 0;
-    const expressionWithTokens = normalizedExpression.replace(
+    const withReferenceTokens = normalizedExpression.replace(
       /\{\{\s*([^}]+)\s*\}\}|\{\s*([^{}]+)\s*\}/g,
       (_match, tokenDouble, tokenSingle) => {
         const token = tokenDouble ?? tokenSingle;
         const varName = `__token_${tokenIndex++}`;
         scope[varName] = resolveToken(token) as any;
+        return varName;
+      },
+    );
+
+    const expressionWithTokens = withReferenceTokens.replace(
+      /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/g,
+      (quotedLiteral) => {
+        const raw = quotedLiteral.slice(1, -1);
+        const unescaped = raw.replace(/\\"/g, '"').replace(/\\'/g, "'");
+        const resolved = resolveQuotedFieldLabel(unescaped);
+        if (resolved === undefined) return quotedLiteral;
+
+        const varName = `__token_${tokenIndex++}`;
+        scope[varName] = resolved as any;
         return varName;
       },
     );

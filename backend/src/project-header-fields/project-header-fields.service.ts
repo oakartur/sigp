@@ -143,7 +143,8 @@ export class ProjectHeaderFieldsService {
       .replace(/\bou\s*\(/gi, 'or(')
       .replace(/\be\s*\(/gi, 'and(')
       .replace(/;/g, ',');
-    return withIf.replace(/(?<![<>=!])=(?!=)/g, '==');
+    const withoutExcelPrefix = withIf.replace(/^\s*=\s*/, '');
+    return withoutExcelPrefix.replace(/(?<![<>=!])=(?!=)/g, '==');
   }
 
   private validateFormulaSyntax(formula: string) {

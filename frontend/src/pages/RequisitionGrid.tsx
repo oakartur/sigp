@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { DataGrid } from '@mui/x-data-grid';
-import type { GridColDef, GridRenderCellParams, GridRowModel } from '@mui/x-data-grid';
+import type { GridColDef, GridRenderCellParams, GridRowModel, GridRowSelectionModel } from '@mui/x-data-grid';
 import {
+  Alert,
   AppBar,
   Box,
   Button,
   Chip,
   CircularProgress,
   Container,
+  Divider,
   IconButton,
   MenuItem,
   Paper,
@@ -56,15 +58,28 @@ export default function RequisitionGrid() {
   const [configs, setConfigs] = useState<ProjectConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingConfigs, setSavingConfigs] = useState(false);
+  const [savingQuantities, setSavingQuantities] = useState(false);
   const [autoFilling, setAutoFilling] = useState(false);
   const [autoSyncError, setAutoSyncError] = useState<string | null>(null);
+  const [quantitySyncError, setQuantitySyncError] = useState<string | null>(null);
   const [lastAutoSyncAt, setLastAutoSyncAt] = useState<number | null>(null);
+  const [dirtyRowIds, setDirtyRowIds] = useState<string[]>([]);
+  const [rowSelectionModel, setRowSelectionModel] = useState<GridRowSelectionModel>({
+    type: 'include',
+    ids: new Set(),
+  });
+  const [bulkQuantity, setBulkQuantity] = useState('');
+  const [bulkApplying, setBulkApplying] = useState(false);
 
   const latestConfigsRef = useRef<ProjectConfig[]>([]);
   const autoSyncTimerRef = useRef<number | null>(null);
+  const quantitySyncTimerRef = useRef<number | null>(null);
   const syncInFlightRef = useRef(false);
   const pendingResyncRef = useRef(false);
   const configDirtyRef = useRef(false);
+  const quantitySyncInFlightRef = useRef(false);
+  const quantityPendingResyncRef = useRef(false);
+  const quantityQueueRef = useRef<Map<string, { manualQuantity: number | null; currentLock: number }>>(new Map());
 
   const [filterLocal, setFilterLocal] = useState('');
   const [filterOperation, setFilterOperation] = useState('');
@@ -78,6 +93,9 @@ export default function RequisitionGrid() {
     return () => {
       if (autoSyncTimerRef.current !== null) {
         window.clearTimeout(autoSyncTimerRef.current);
+      }
+      if (quantitySyncTimerRef.current !== null) {
+        window.clearTimeout(quantitySyncTimerRef.current);
       }
     };
   }, []);
@@ -96,6 +114,81 @@ export default function RequisitionGrid() {
       value: config.value ?? '',
       field: config.field,
     }));
+
+  const normalizeManualQuantity = (value: unknown): number | null => {
+    if (value === '' || value === null || value === undefined) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const markRowDirty = (rowId: string, dirty: boolean) => {
+    setDirtyRowIds((previous) => {
+      const exists = previous.includes(rowId);
+      if (dirty && !exists) return [...previous, rowId];
+      if (!dirty && exists) return previous.filter((id) => id !== rowId);
+      return previous;
+    });
+  };
+
+  const flushQuantityQueue = async () => {
+    if (!reqId) return;
+    if (quantitySyncInFlightRef.current) {
+      quantityPendingResyncRef.current = true;
+      return;
+    }
+    if (quantityQueueRef.current.size === 0) return;
+
+    quantitySyncInFlightRef.current = true;
+    setSavingQuantities(true);
+    setQuantitySyncError(null);
+
+    const queueBatch = Array.from(quantityQueueRef.current.entries());
+    quantityQueueRef.current.clear();
+
+    for (const [rowId, payload] of queueBatch) {
+      try {
+        const response = await api.put(`/requisitions/items/${rowId}/quantity`, {
+          manualQuantity: payload.manualQuantity,
+          currentLock: payload.currentLock,
+        });
+        const updatedRow = response.data as RequisitionItemRow;
+        setRows((previous) => previous.map((row) => (row.id === rowId ? updatedRow : row)));
+        markRowDirty(rowId, false);
+      } catch (error) {
+        const message = parseApiErrorMessage(error, 'Erro ao salvar quantidade.');
+        setQuantitySyncError(message);
+        markRowDirty(rowId, true);
+      }
+    }
+
+    quantitySyncInFlightRef.current = false;
+    setSavingQuantities(false);
+    setLastAutoSyncAt(Date.now());
+
+    if (quantityPendingResyncRef.current || quantityQueueRef.current.size > 0) {
+      quantityPendingResyncRef.current = false;
+      void flushQuantityQueue();
+    }
+  };
+
+  const scheduleQuantitySync = () => {
+    if (quantitySyncTimerRef.current !== null) {
+      window.clearTimeout(quantitySyncTimerRef.current);
+    }
+
+    quantitySyncTimerRef.current = window.setTimeout(() => {
+      void flushQuantityQueue();
+    }, 450);
+  };
+
+  const enqueueQuantitySave = (row: RequisitionItemRow, manualQuantity: number | null) => {
+    quantityQueueRef.current.set(row.id, {
+      manualQuantity,
+      currentLock: row.versionLock,
+    });
+    markRowDirty(row.id, true);
+    scheduleQuantitySync();
+  };
 
   const performAutoSync = async () => {
     if (!reqId) return;
@@ -154,6 +247,19 @@ export default function RequisitionGrid() {
     }, 700);
   };
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void performAutoSync();
+        void flushQuantityQueue();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [reqId]);
+
   const loadAll = async () => {
     if (!reqId) return;
 
@@ -161,6 +267,13 @@ export default function RequisitionGrid() {
       window.clearTimeout(autoSyncTimerRef.current);
       autoSyncTimerRef.current = null;
     }
+    if (quantitySyncTimerRef.current !== null) {
+      window.clearTimeout(quantitySyncTimerRef.current);
+      quantitySyncTimerRef.current = null;
+    }
+    quantityQueueRef.current.clear();
+    quantityPendingResyncRef.current = false;
+    quantitySyncInFlightRef.current = false;
 
     setLoading(true);
     try {
@@ -176,6 +289,9 @@ export default function RequisitionGrid() {
       configDirtyRef.current = false;
       pendingResyncRef.current = false;
       setAutoSyncError(null);
+      setQuantitySyncError(null);
+      setDirtyRowIds([]);
+      setRowSelectionModel({ type: 'include', ids: new Set() });
     } catch (error) {
       console.error('Failed to fetch requisition data', error);
       const errorMessage = parseApiErrorMessage(error, 'Erro ao carregar requisicao.');
@@ -220,6 +336,34 @@ export default function RequisitionGrid() {
     });
   }, [rows, filterLocal, filterOperation, searchTerm]);
 
+  const getFinalQuantity = (row: RequisitionItemRow) =>
+    row.manualQuantity ?? row.overrideValue ?? row.calculatedValue ?? 0;
+
+  const selectedIdsSet = useMemo(
+    () => new Set(Array.from(rowSelectionModel.ids).map((id) => String(id))),
+    [rowSelectionModel],
+  );
+
+  const selectedFilteredRows = useMemo(
+    () => filteredRows.filter((row) => selectedIdsSet.has(row.id)),
+    [filteredRows, selectedIdsSet],
+  );
+
+  const targetRowsForBulk = selectedFilteredRows.length > 0 ? selectedFilteredRows : filteredRows;
+
+  const summary = useMemo(() => {
+    const filteredPending = filteredRows.filter((row) => row.status === 'PENDING').length;
+    const filteredReceived = filteredRows.filter((row) => row.status === 'RECEIVED').length;
+    const filteredTotalQuantity = filteredRows.reduce((acc, row) => acc + getFinalQuantity(row), 0);
+    return {
+      total: rows.length,
+      filtered: filteredRows.length,
+      pending: filteredPending,
+      received: filteredReceived,
+      filteredTotalQuantity,
+    };
+  }, [rows, filteredRows]);
+
   const columns: GridColDef[] = [
     { field: 'localName', headerName: 'Local', width: 180 },
     { field: 'operationName', headerName: 'Operacao', width: 200 },
@@ -230,17 +374,26 @@ export default function RequisitionGrid() {
       headerName: 'Qtd Manual',
       width: 130,
       editable: true,
+      type: 'number',
+      align: 'right',
+      headerAlign: 'right',
     },
     {
       field: 'calculatedValue',
       headerName: 'Qtd Auto',
       width: 120,
+      type: 'number',
+      align: 'right',
+      headerAlign: 'right',
     },
     {
       field: 'finalQuantity',
       headerName: 'Qtd Final',
       width: 120,
-      valueGetter: (_value, row) => row.manualQuantity ?? row.overrideValue ?? row.calculatedValue ?? 0,
+      type: 'number',
+      align: 'right',
+      headerAlign: 'right',
+      valueGetter: (_value, row) => getFinalQuantity(row as RequisitionItemRow),
     },
     {
       field: 'status',
@@ -260,22 +413,48 @@ export default function RequisitionGrid() {
     },
   ];
 
-  const processRowUpdate = async (newRow: GridRowModel, oldRow: GridRowModel) => {
-    if (newRow.manualQuantity === oldRow.manualQuantity) {
+  const processRowUpdate = (newRow: GridRowModel, oldRow: GridRowModel) => {
+    const previousValue = normalizeManualQuantity(oldRow.manualQuantity);
+    const nextValue = normalizeManualQuantity(newRow.manualQuantity);
+    if (previousValue === nextValue) {
       return oldRow;
     }
 
-    const normalizedValue =
-      newRow.manualQuantity === '' || newRow.manualQuantity === null || newRow.manualQuantity === undefined
-        ? null
-        : Number(newRow.manualQuantity);
+    const optimisticRow = {
+      ...(oldRow as RequisitionItemRow),
+      ...(newRow as RequisitionItemRow),
+      manualQuantity: nextValue,
+    };
 
-    const response = await api.put(`/requisitions/items/${newRow.id}/quantity`, {
-      manualQuantity: normalizedValue,
-      currentLock: oldRow.versionLock,
-    });
+    setRows((previous) => previous.map((row) => (row.id === optimisticRow.id ? optimisticRow : row)));
+    enqueueQuantitySave(oldRow as RequisitionItemRow, nextValue);
 
-    return response.data;
+    return optimisticRow;
+  };
+
+  const handleApplyBulkQuantity = async () => {
+    const targetRows = targetRowsForBulk;
+    if (targetRows.length === 0) return;
+
+    const value = normalizeManualQuantity(bulkQuantity);
+    if (bulkQuantity.trim() && value === null) {
+      alert('Informe uma quantidade numerica valida para aplicar em lote.');
+      return;
+    }
+
+    const targetIds = new Set(targetRows.map((row) => row.id));
+    setBulkApplying(true);
+
+    setRows((previous) =>
+      previous.map((row) => (targetIds.has(row.id) ? { ...row, manualQuantity: value } : row)),
+    );
+
+    for (const row of targetRows) {
+      enqueueQuantitySave(row, value);
+    }
+
+    setBulkApplying(false);
+    void flushQuantityQueue();
   };
 
   const handleConfigChange = (fieldId: string, value: string) => {
@@ -365,15 +544,17 @@ export default function RequisitionGrid() {
           <Typography
             variant="body2"
             sx={{
-              color: autoSyncError ? 'error.main' : 'text.secondary',
+              color: autoSyncError || quantitySyncError ? 'error.main' : 'text.secondary',
               minWidth: { xs: 0, md: 260 },
               textAlign: 'right',
             }}
           >
-            {savingConfigs || autoFilling
+            {savingConfigs || autoFilling || savingQuantities
               ? 'Sincronizando automaticamente...'
               : autoSyncError
                 ? autoSyncError
+                : quantitySyncError
+                  ? quantitySyncError
                 : lastAutoSyncAt
                   ? `Sincronizado as ${new Date(lastAutoSyncAt).toLocaleTimeString('pt-BR')}`
                   : 'Sincronizacao automatica ativa'}
@@ -386,6 +567,23 @@ export default function RequisitionGrid() {
       </AppBar>
 
       <Container maxWidth="xl" sx={{ py: 2.5 }}>
+        <Paper sx={{ p: 2, mb: 2 }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', md: 'center' }}>
+            <Chip label={`Itens totais: ${summary.total}`} color="primary" variant="outlined" />
+            <Chip label={`Itens filtrados: ${summary.filtered}`} variant="outlined" />
+            <Chip label={`Pendentes (filtro): ${summary.pending}`} color="warning" variant="outlined" />
+            <Chip label={`Recebidos (filtro): ${summary.received}`} color="success" variant="outlined" />
+            <Chip label={`Qtd final filtrada: ${summary.filteredTotalQuantity.toLocaleString('pt-BR')}`} color="secondary" />
+          </Stack>
+        </Paper>
+
+        {(autoSyncError || quantitySyncError) && (
+          <Stack spacing={1.25} sx={{ mb: 2 }}>
+            {autoSyncError && <Alert severity="warning">Falha ao sincronizar configuracoes: {autoSyncError}</Alert>}
+            {quantitySyncError && <Alert severity="warning">Falha ao sincronizar quantidades: {quantitySyncError}</Alert>}
+          </Stack>
+        )}
+
         <Paper sx={{ p: 2, mb: 2 }}>
           <Typography variant="subtitle1" sx={{ mb: 1.5 }}>
             Configuracoes de Projeto
@@ -466,6 +664,33 @@ export default function RequisitionGrid() {
               Limpar
             </Button>
           </Stack>
+
+          <Divider sx={{ my: 1.5 }} />
+
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
+            <TextField
+              size="small"
+              type="number"
+              label="Quantidade em lote"
+              value={bulkQuantity}
+              onChange={(event) => setBulkQuantity(event.target.value)}
+              sx={{ minWidth: 200 }}
+            />
+            <Button variant="contained" onClick={handleApplyBulkQuantity} disabled={bulkApplying || loading}>
+              {bulkApplying
+                ? 'Aplicando...'
+                : `Aplicar em ${targetRowsForBulk.length} ${selectedFilteredRows.length > 0 ? 'selecionado(s)' : 'item(ns) filtrado(s)'}`}
+            </Button>
+            <Button
+              color="inherit"
+              onClick={() => {
+                setRowSelectionModel({ type: 'include', ids: new Set() });
+              }}
+              disabled={rowSelectionModel.ids.size === 0}
+            >
+              Limpar selecao
+            </Button>
+          </Stack>
         </Paper>
 
         <Paper sx={{ p: 1.5, height: 660 }}>
@@ -474,8 +699,18 @@ export default function RequisitionGrid() {
             columns={columns}
             loading={loading}
             processRowUpdate={processRowUpdate}
-            onProcessRowUpdateError={() => alert('Erro ao salvar quantidade. Atualize a tela e tente novamente.')}
+            onProcessRowUpdateError={() => alert('Erro local de edicao. Atualize a tela e tente novamente.')}
+            checkboxSelection
             disableRowSelectionOnClick
+            rowSelectionModel={rowSelectionModel}
+            onRowSelectionModelChange={(model) => setRowSelectionModel(model)}
+            getRowClassName={(params) => (dirtyRowIds.includes(String(params.id)) ? 'row-dirty' : '')}
+            pageSizeOptions={[25, 50, 100]}
+            initialState={{
+              pagination: {
+                paginationModel: { page: 0, pageSize: 50 },
+              },
+            }}
             sx={{
               border: 'none',
               '& .MuiDataGrid-columnHeaders': {
@@ -488,6 +723,9 @@ export default function RequisitionGrid() {
               },
               '& .MuiDataGrid-row:nth-of-type(even)': {
                 backgroundColor: 'rgba(16, 42, 67, 0.02)',
+              },
+              '& .MuiDataGrid-row.row-dirty': {
+                backgroundColor: 'rgba(255, 224, 130, 0.25)',
               },
             }}
           />
