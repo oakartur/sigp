@@ -963,6 +963,9 @@ export class CatalogService {
     if (/\bsoma\s*\(/i.test(original) || /\bsum\s*\(/i.test(normalized)) commands.add('soma()');
     if (/\barred\s*\(/i.test(original) || /\barred\s*\(/i.test(normalized)) commands.add('arred()');
     if (/\binteiro\s*\(/i.test(original) || /\bint\s*\(/i.test(normalized)) commands.add('inteiro()');
+    if (/\bqtd\s*\(/i.test(original) || /\bquantidade\s*\(/i.test(original) || /\bqtd\s*\(/i.test(normalized)) {
+      commands.add('qtd()');
+    }
 
     const fields = await this.prisma.projectHeaderField.findMany({
       where: { isActive: true },
@@ -1023,6 +1026,9 @@ export class CatalogService {
       },
       eq: (left: unknown, right: unknown) => this.isEqual(left, right),
       neq: (left: unknown, right: unknown) => !this.isEqual(left, right),
+      qtd: (_local: unknown, _operation: unknown, _equipment: unknown) => 0,
+      QTD: (_local: unknown, _operation: unknown, _equipment: unknown) => 0,
+      quantidade: (_local: unknown, _operation: unknown, _equipment: unknown) => 0,
     };
 
     const resolveByField = (field: (typeof fields)[number]) => {
@@ -1147,6 +1153,8 @@ export class CatalogService {
         'inteiro',
         'int',
         'arred',
+        'qtd',
+        'quantidade',
         'true',
         'false',
         'pi',

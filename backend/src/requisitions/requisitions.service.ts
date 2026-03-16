@@ -8,6 +8,11 @@ type ConfigWithField = Prisma.RequisitionProjectConfigGetPayload<{
   include: { field: true };
 }>;
 
+type FormulaRuntimeContext = {
+  variables?: Record<string, unknown>;
+  quantityResolver?: (local: unknown, operation: unknown, equipment: unknown) => number;
+};
+
 @Injectable()
 export class RequisitionsService {
   constructor(
@@ -335,6 +340,30 @@ export class RequisitionsService {
       .toLowerCase();
   }
 
+  private normalizeCatalogKey(value?: string | null): string {
+    return this.normalizeText(value)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+  }
+
+  private buildCatalogLookupKey(local: string, operation: string, equipment: string): string {
+    return `${local}||${operation}||${equipment}`;
+  }
+
+  private getEffectiveItemQuantity(item: {
+    overrideValue?: number | null;
+    manualQuantity?: number | null;
+    calculatedValue?: number | null;
+  }): number {
+    const candidates = [item.overrideValue, item.manualQuantity, item.calculatedValue];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'number' && Number.isFinite(candidate)) return candidate;
+    }
+    return 0;
+  }
+
   private isStatusProjectField(label: string): boolean {
     return this.normalizeLooseKey(label) === 'statusdarequisicao';
   }
@@ -436,8 +465,8 @@ export class RequisitionsService {
     return '';
   }
 
-  private buildFormulaScope(configs: ConfigWithField[]) {
-    const scope: Record<string, string | number | boolean> = {
+  private buildFormulaScope(configs: ConfigWithField[], runtime?: FormulaRuntimeContext) {
+    const scope: Record<string, unknown> = {
       if: (condition: unknown, whenTrue: unknown, whenFalse: unknown) => (condition ? whenTrue : whenFalse),
       SE: (condition: unknown, whenTrue: unknown, whenFalse: unknown) => (condition ? whenTrue : whenFalse),
       se: (condition: unknown, whenTrue: unknown, whenFalse: unknown) => (condition ? whenTrue : whenFalse),
@@ -467,11 +496,26 @@ export class RequisitionsService {
       },
       eq: (left: unknown, right: unknown) => this.isEqual(left, right),
       neq: (left: unknown, right: unknown) => !this.isEqual(left, right),
+      qtd: (local: unknown, operation: unknown, equipment: unknown) =>
+        runtime?.quantityResolver ? runtime.quantityResolver(local, operation, equipment) : 0,
+      QTD: (local: unknown, operation: unknown, equipment: unknown) =>
+        runtime?.quantityResolver ? runtime.quantityResolver(local, operation, equipment) : 0,
+      quantidade: (local: unknown, operation: unknown, equipment: unknown) =>
+        runtime?.quantityResolver ? runtime.quantityResolver(local, operation, equipment) : 0,
     } as any;
 
     const valuesByFieldId = new Map<string, string | number | boolean>();
     const valuesByAlias = new Map<string, string | number | boolean>();
     const valuesByLabel = new Map<string, string | number | boolean>();
+    const runtimeValuesByLooseKey = new Map<string, unknown>();
+
+    if (runtime?.variables) {
+      for (const [key, value] of Object.entries(runtime.variables)) {
+        const normalizedKey = this.normalizeLooseKey(key);
+        if (normalizedKey) runtimeValuesByLooseKey.set(normalizedKey, value);
+        scope[key] = value;
+      }
+    }
 
     for (const config of configs) {
       const rawValue = this.normalizeText(config.value);
@@ -531,22 +575,46 @@ export class RequisitionsService {
           return valuesByAlias.get(alias);
         }
 
+        if (runtime?.variables) {
+          if (directId in runtime.variables) return runtime.variables[directId];
+          const looseKey = this.normalizeLooseKey(directId);
+          if (runtimeValuesByLooseKey.has(looseKey)) {
+            return runtimeValuesByLooseKey.get(looseKey);
+          }
+        }
+
         throw new BadRequestException(`Token de formula nao encontrado: ${token}`);
       },
       resolveQuotedFieldLabel: (label: string) => {
         const key = this.normalizeText(label).toLowerCase();
-        return valuesByLabel.get(key);
+        const fieldValue = valuesByLabel.get(key);
+        if (fieldValue !== undefined) return fieldValue;
+
+        if (runtime?.variables) {
+          if (label in runtime.variables) return runtime.variables[label];
+          const looseKey = this.normalizeLooseKey(label);
+          if (runtimeValuesByLooseKey.has(looseKey)) {
+            return runtimeValuesByLooseKey.get(looseKey);
+          }
+        }
+
+        return undefined;
       },
     };
   }
 
-  private evaluateExpression(expression: string, configs: ConfigWithField[], context: string) {
+  private evaluateExpression(
+    expression: string,
+    configs: ConfigWithField[],
+    context: string,
+    runtime?: FormulaRuntimeContext,
+  ) {
     const normalizedExpression = this.normalizeExpression(expression);
     if (!normalizedExpression) {
       throw new BadRequestException(`Formula vazia em ${context}.`);
     }
 
-    const { scope, resolveToken, resolveQuotedFieldLabel } = this.buildFormulaScope(configs);
+    const { scope, resolveToken, resolveQuotedFieldLabel } = this.buildFormulaScope(configs, runtime);
 
     let tokenIndex = 0;
     const withReferenceTokens = normalizedExpression.replace(
@@ -1162,37 +1230,119 @@ export class RequisitionsService {
       include: { equipmentCatalog: true },
     });
 
-    for (const item of items as any[]) {
-      const catalog = item.equipmentCatalog;
-      if (!catalog) continue;
+    const typedItems = items as Array<any>;
+    const quantityByItemId = new Map<string, number>();
+    const initialQuantityByItemId = new Map<string, number>();
+    const quantityByReference = new Map<string, number>();
 
-      let autoQuantity: number | null = null;
+    const registerItemQuantity = (item: any, quantity: number) => {
+      const local = this.normalizeCatalogKey(item.localName);
+      const operation = this.normalizeCatalogKey(item.operationName);
+      const equipmentName = this.normalizeCatalogKey(item.equipmentName);
+      const equipmentCode = this.normalizeCatalogKey(item.equipmentCode);
 
-      if (this.normalizeText(catalog.autoFormulaExpression)) {
-        const evaluated = this.evaluateExpression(
-          catalog.autoFormulaExpression,
-          configs,
-          `auto formula do equipamento '${catalog.description}'`,
-        );
-        autoQuantity = this.toNumericQuantity(evaluated, `equipamento '${catalog.description}'`);
-      } else if (catalog.autoConfigFieldId) {
-        const configValueRaw = configByFieldId.get(catalog.autoConfigFieldId);
-        const configValue = this.parseNumber(configValueRaw);
-        if (configValue !== null) {
-          const base = catalog.baseQuantity && catalog.baseQuantity !== 0 ? catalog.baseQuantity : 1;
-          const multiplier = catalog.autoMultiplier ?? 1;
-          autoQuantity = configValue * base * multiplier;
+      if (local && operation && equipmentName) {
+        quantityByReference.set(this.buildCatalogLookupKey(local, operation, equipmentName), quantity);
+      }
+      if (local && operation && equipmentCode) {
+        quantityByReference.set(this.buildCatalogLookupKey(local, operation, equipmentCode), quantity);
+      }
+    };
+
+    for (const item of typedItems) {
+      const initial = this.getEffectiveItemQuantity(item);
+      quantityByItemId.set(item.id, initial);
+      initialQuantityByItemId.set(item.id, initial);
+      registerItemQuantity(item, initial);
+    }
+
+    const maxPasses = Math.max(typedItems.length, 1) + 2;
+    for (let pass = 0; pass < maxPasses; pass++) {
+      let hasChanges = false;
+
+      for (const item of typedItems) {
+        const catalog = item.equipmentCatalog;
+        if (!catalog) continue;
+
+        let autoQuantity: number | null = null;
+
+        if (this.normalizeText(catalog.autoFormulaExpression)) {
+          const currentLocal = this.normalizeCatalogKey(item.localName);
+          const currentOperation = this.normalizeCatalogKey(item.operationName);
+
+          const evaluated = this.evaluateExpression(
+            catalog.autoFormulaExpression,
+            configs,
+            `auto formula do equipamento '${catalog.description}'`,
+            {
+              variables: {
+                Local: item.localName ?? '',
+                Operacao: item.operationName ?? '',
+                Operação: item.operationName ?? '',
+                Equipamento: item.equipmentName ?? '',
+                Codigo: item.equipmentCode ?? '',
+                Código: item.equipmentCode ?? '',
+              },
+              quantityResolver: (local: unknown, operation: unknown, equipment: unknown) => {
+                const targetLocal = this.normalizeCatalogKey(
+                  this.normalizeText(String(local ?? '')) || currentLocal,
+                );
+                const targetOperation = this.normalizeCatalogKey(
+                  this.normalizeText(String(operation ?? '')) || currentOperation,
+                );
+                const targetEquipment = this.normalizeCatalogKey(String(equipment ?? ''));
+
+                if (!targetLocal || !targetOperation || !targetEquipment) return 0;
+
+                return (
+                  quantityByReference.get(
+                    this.buildCatalogLookupKey(targetLocal, targetOperation, targetEquipment),
+                  ) ?? 0
+                );
+              },
+            },
+          );
+          autoQuantity = this.toNumericQuantity(evaluated, `equipamento '${catalog.description}'`);
+        } else if (catalog.autoConfigFieldId) {
+          const configValueRaw = configByFieldId.get(catalog.autoConfigFieldId);
+          const configValue = this.parseNumber(configValueRaw);
+          if (configValue !== null) {
+            const base = catalog.baseQuantity && catalog.baseQuantity !== 0 ? catalog.baseQuantity : 1;
+            const multiplier = catalog.autoMultiplier ?? 1;
+            autoQuantity = configValue * base * multiplier;
+          }
+        }
+
+        if (autoQuantity === null) continue;
+
+        const previous = quantityByItemId.get(item.id) ?? 0;
+        if (Math.abs(previous - autoQuantity) > 1e-9) {
+          hasChanges = true;
+          quantityByItemId.set(item.id, autoQuantity);
+          registerItemQuantity(item, autoQuantity);
         }
       }
 
-      if (autoQuantity === null) continue;
+      if (!hasChanges) break;
+      if (pass === maxPasses - 1 && hasChanges) {
+        throw new BadRequestException(
+          'Dependencia ciclica detectada entre formulas de auto preenchimento do catalogo.',
+        );
+      }
+    }
+
+    for (const item of typedItems) {
+      const nextQuantity = quantityByItemId.get(item.id);
+      const initialQuantity = initialQuantityByItemId.get(item.id);
+      if (nextQuantity === undefined || initialQuantity === undefined) continue;
+      if (Math.abs(nextQuantity - initialQuantity) <= 1e-9) continue;
 
       // Requisito: auto preenchimento deve sobrepor a quantidade da requisicao.
       await this.prisma.requisitionItem.update({
         where: { id: item.id },
         data: {
-          calculatedValue: autoQuantity,
-          manualQuantity: autoQuantity,
+          calculatedValue: nextQuantity,
+          manualQuantity: nextQuantity,
           versionLock: { increment: 1 },
         },
       });

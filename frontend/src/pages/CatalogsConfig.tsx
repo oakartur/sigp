@@ -783,7 +783,9 @@ export default function CatalogsConfig() {
               fullWidth
               multiline
               minRows={3}
-              helperText={'Quando preenchida, sobrepoe Campo+Multiplicador. Ex.: Se(Obra=\"Nova\", 1, 0)'}
+              helperText={
+                'Quando preenchida, sobrepoe Campo+Multiplicador. Ex.: Se(Obra="Nova", 1, 0) ou qtd({{Local}}, {{Operacao}}, "Nome do Equipamento").'
+              }
             />
 
             {equipmentDialog.autoFormulaExpression.trim() && (
