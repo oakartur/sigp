@@ -33,8 +33,157 @@ export class RequisitionsService {
       .toLowerCase();
   }
 
+  private sanitizeFormulaInput(expression: string): string {
+    return expression
+      .replace(/\u00A0/g, ' ')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/[−–—]/g, '-')
+      .replace(/[×]/g, '*')
+      .replace(/[÷]/g, '/')
+      .replace(/[｛]/g, '{')
+      .replace(/[｝]/g, '}')
+      .replace(/[（]/g, '(')
+      .replace(/[）]/g, ')')
+      .replace(/[，]/g, ',')
+      .replace(/[；]/g, ';');
+  }
+
+  private splitTopLevelArgs(argsText: string): string[] {
+    const args: string[] = [];
+    let current = '';
+    let depth = 0;
+    let braceDepth = 0;
+    let quote: "'" | '"' | null = null;
+
+    for (let i = 0; i < argsText.length; i++) {
+      const char = argsText[i];
+      const prev = i > 0 ? argsText[i - 1] : '';
+
+      if (quote) {
+        current += char;
+        if (char === quote && prev !== '\\') quote = null;
+        continue;
+      }
+
+      if (char === '"' || char === "'") {
+        quote = char;
+        current += char;
+        continue;
+      }
+
+      if (char === '{') {
+        braceDepth++;
+        current += char;
+        continue;
+      }
+      if (char === '}') {
+        if (braceDepth > 0) braceDepth--;
+        current += char;
+        continue;
+      }
+
+      if (braceDepth === 0) {
+        if (char === '(') {
+          depth++;
+          current += char;
+          continue;
+        }
+        if (char === ')') {
+          if (depth > 0) depth--;
+          current += char;
+          continue;
+        }
+        if (char === ',' && depth === 0) {
+          args.push(current.trim());
+          current = '';
+          continue;
+        }
+      }
+
+      current += char;
+    }
+
+    args.push(current.trim());
+    return args;
+  }
+
+  private findMatchingParen(text: string, openIndex: number): number {
+    let depth = 0;
+    let quote: "'" | '"' | null = null;
+
+    for (let i = openIndex; i < text.length; i++) {
+      const char = text[i];
+      const prev = i > 0 ? text[i - 1] : '';
+
+      if (quote) {
+        if (char === quote && prev !== '\\') quote = null;
+        continue;
+      }
+
+      if (char === '"' || char === "'") {
+        quote = char;
+        continue;
+      }
+
+      if (char === '(') depth++;
+      if (char === ')') {
+        depth--;
+        if (depth === 0) return i;
+      }
+    }
+
+    return -1;
+  }
+
+  private rewriteIfCallsToTernary(expression: string): string {
+    const source = expression;
+    let result = '';
+    let i = 0;
+
+    while (i < source.length) {
+      const char = source[i];
+      const isIdentStart = /[A-Za-z_]/.test(char);
+      if (!isIdentStart) {
+        result += char;
+        i++;
+        continue;
+      }
+
+      let j = i + 1;
+      while (j < source.length && /[A-Za-z0-9_]/.test(source[j])) j++;
+      const name = source.slice(i, j);
+
+      let k = j;
+      while (k < source.length && /\s/.test(source[k])) k++;
+
+      const nameLower = name.toLowerCase();
+      if ((nameLower === 'if' || nameLower === 'se') && source[k] === '(') {
+        const closeIndex = this.findMatchingParen(source, k);
+        if (closeIndex > k) {
+          const argsText = source.slice(k + 1, closeIndex);
+          const args = this.splitTopLevelArgs(argsText);
+          if (args.length === 3) {
+            const condition = this.rewriteIfCallsToTernary(args[0]);
+            const whenTrue = this.rewriteIfCallsToTernary(args[1]);
+            const whenFalse = this.rewriteIfCallsToTernary(args[2]);
+            result += `((${condition}) ? (${whenTrue}) : (${whenFalse}))`;
+            i = closeIndex + 1;
+            continue;
+          }
+        }
+      }
+
+      result += char;
+      i++;
+    }
+
+    return result;
+  }
+
   private normalizeExpression(expression: string): string {
-    const trimmed = this.normalizeText(expression);
+    const trimmed = this.sanitizeFormulaInput(this.normalizeText(expression));
     const withIf = trimmed
       .replace(/\bse\s*\(/gi, 'if(')
       .replace(/\bou\s*\(/gi, 'or(')
@@ -49,7 +198,8 @@ export class RequisitionsService {
     const withoutExcelPrefix = withFunctionAliases.replace(/^\s*=\s*/, '');
     const withDecimalDot = withoutExcelPrefix.replace(/(\d)\s*,\s*(\d)/g, '$1.$2');
     const withEq = withDecimalDot.replace(/(?<![<>=!])=(?!=)/g, '==');
-    return this.rewriteEqualityOperators(withEq);
+    const withEqFunctions = this.rewriteEqualityOperators(withEq);
+    return this.rewriteIfCallsToTernary(withEqFunctions);
   }
 
   private rewriteEqualityOperators(expression: string): string {
@@ -102,7 +252,7 @@ export class RequisitionsService {
 
     if (typeof a === 'number' && typeof b === 'number') return a === b;
     if (typeof a === 'boolean' && typeof b === 'boolean') return a === b;
-    return String(a) === String(b);
+    return this.normalizeText(String(a)).toLowerCase() === this.normalizeText(String(b)).toLowerCase();
   }
 
   private parseNumber(value?: string | null): number | null {
