@@ -21,6 +21,7 @@ import {
 import {
   ArrowBack as ArrowBackIcon,
   Download as DownloadIcon,
+  Group as GroupIcon,
   Settings as SettingsIcon,
   UploadFile as UploadFileIcon,
 } from '@mui/icons-material';
@@ -239,6 +240,15 @@ export default function SystemSettings() {
               sx={{ alignSelf: 'flex-start' }}
             >
               Importar configuracoes
+            </Button>
+
+            <Button
+              variant="outlined"
+              startIcon={<GroupIcon />}
+              onClick={() => navigate('/settings/users')}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              Gerenciar usuarios
             </Button>
 
             <Typography variant="caption" color="text.secondary">
