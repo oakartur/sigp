@@ -66,6 +66,26 @@ export class CatalogService {
     return expression.replace(neqRegex, 'neq($1,$2)').replace(eqRegex, 'eq($1,$2)');
   }
 
+  private parseAstWithLazyIf(expression: string) {
+    const parsed = math.parse(expression);
+    const ConditionalNodeCtor = (math as any).ConditionalNode;
+    if (!ConditionalNodeCtor) return parsed;
+
+    return parsed.transform((node: any) => {
+      const fnName = node?.fn?.name;
+      const isIfLike =
+        node?.isFunctionNode &&
+        node?.fn?.isSymbolNode &&
+        typeof fnName === 'string' &&
+        ['if', 'se'].includes(fnName.toLowerCase()) &&
+        Array.isArray(node?.args) &&
+        node.args.length === 3;
+
+      if (!isIfLike) return node;
+      return new ConditionalNodeCtor(node.args[0], node.args[1], node.args[2]);
+    });
+  }
+
   private validateFormulaExpression(formula: string) {
     const withPlaceholders = formula.replace(/\{\{\s*[^}]+\s*\}\}|\{\s*[^{}]+\s*\}/g, '1');
     try {
@@ -903,7 +923,7 @@ export class CatalogService {
     let ast: any = null;
     let parseError: string | null = null;
     try {
-      ast = math.parse(expressionWithTokens);
+      ast = this.parseAstWithLazyIf(expressionWithTokens);
     } catch (error: any) {
       parseError = this.normalizeNullable(error?.message || 'erro ao interpretar formula');
     }
@@ -986,7 +1006,7 @@ export class CatalogService {
 
     if (!syntaxError && !parseError && unknownSymbols.length === 0) {
       try {
-        const compiled = math.compile(expressionWithTokens);
+        const compiled = ast.compile();
         result = compiled.evaluate(scope as any);
       } catch (error: any) {
         evaluationError = error?.message || 'erro ao avaliar formula';

@@ -62,6 +62,26 @@ export class RequisitionsService {
     return expression.replace(neqRegex, 'neq($1,$2)').replace(eqRegex, 'eq($1,$2)');
   }
 
+  private parseAstWithLazyIf(expression: string) {
+    const parsed = math.parse(expression);
+    const ConditionalNodeCtor = (math as any).ConditionalNode;
+    if (!ConditionalNodeCtor) return parsed;
+
+    return parsed.transform((node: any) => {
+      const fnName = node?.fn?.name;
+      const isIfLike =
+        node?.isFunctionNode &&
+        node?.fn?.isSymbolNode &&
+        typeof fnName === 'string' &&
+        ['if', 'se'].includes(fnName.toLowerCase()) &&
+        Array.isArray(node?.args) &&
+        node.args.length === 3;
+
+      if (!isIfLike) return node;
+      return new ConditionalNodeCtor(node.args[0], node.args[1], node.args[2]);
+    });
+  }
+
   private toComparable(value: unknown): string | number | boolean {
     if (typeof value === 'number' || typeof value === 'boolean') return value;
 
@@ -379,7 +399,8 @@ export class RequisitionsService {
     );
 
     try {
-      const compiled = math.compile(expressionWithTokens);
+      const parsed = this.parseAstWithLazyIf(expressionWithTokens);
+      const compiled = parsed.compile();
       return compiled.evaluate(scope as any);
     } catch (error: any) {
       throw new BadRequestException(`Erro ao avaliar formula em ${context}: ${error?.message || 'erro desconhecido'}`);
