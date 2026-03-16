@@ -184,6 +184,25 @@ export class CatalogService {
     return result;
   }
 
+  private unwrapMalformedIfWrapper(expression: string): string {
+    const trimmed = this.normalizeNullable(expression);
+    const ifMatch = /^if\s*\(/i.exec(trimmed);
+    if (!ifMatch) return trimmed;
+
+    const openIndex = trimmed.indexOf('(', ifMatch.index);
+    if (openIndex < 0) return trimmed;
+
+    const closeIndex = this.findMatchingParen(trimmed, openIndex);
+    if (closeIndex !== trimmed.length - 1) return trimmed;
+
+    const inside = trimmed.slice(openIndex + 1, closeIndex).trim();
+    if (!inside.includes('?') || !inside.includes(':')) return trimmed;
+
+    const args = this.splitTopLevelArgs(inside);
+    if (args.length !== 1) return trimmed;
+    return inside;
+  }
+
   private normalizeFormulaExpression(formula?: string | null): string | null {
     const normalized = this.sanitizeFormulaInput(this.normalizeNullable(formula || ''));
     if (!normalized) return null;
@@ -203,7 +222,8 @@ export class CatalogService {
     const withDecimalDot = withoutExcelPrefix.replace(/(\d)\s*,\s*(\d)/g, '$1.$2');
     const withEq = withDecimalDot.replace(/(?<![<>=!])=(?!=)/g, '==');
     const withEqFunctions = this.rewriteEqualityOperators(withEq);
-    return this.rewriteIfCallsToTernary(withEqFunctions);
+    const withTernary = this.rewriteIfCallsToTernary(withEqFunctions);
+    return this.unwrapMalformedIfWrapper(withTernary);
   }
 
   private rewriteEqualityOperators(expression: string): string {
@@ -1066,6 +1086,10 @@ export class CatalogService {
       },
     );
 
+    const expressionForMath = this.unwrapMalformedIfWrapper(
+      this.rewriteEqualityOperators(expressionWithTokens),
+    );
+
     tokenBindings.forEach((value, key) => {
       scope[key] = value;
     });
@@ -1073,7 +1097,7 @@ export class CatalogService {
     let ast: any = null;
     let parseError: string | null = null;
     try {
-      ast = this.parseAstWithLazyIf(expressionWithTokens);
+      ast = this.parseAstWithLazyIf(expressionForMath);
     } catch (error: any) {
       parseError = this.normalizeNullable(error?.message || 'erro ao interpretar formula');
     }
@@ -1096,7 +1120,7 @@ export class CatalogService {
         symbols.add(name);
       });
     } else {
-      const expressionWithoutStrings = expressionWithTokens.replace(
+      const expressionWithoutStrings = expressionForMath.replace(
         /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g,
         ' ',
       );

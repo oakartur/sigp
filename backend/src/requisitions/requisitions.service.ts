@@ -182,6 +182,25 @@ export class RequisitionsService {
     return result;
   }
 
+  private unwrapMalformedIfWrapper(expression: string): string {
+    const trimmed = this.normalizeText(expression);
+    const ifMatch = /^if\s*\(/i.exec(trimmed);
+    if (!ifMatch) return trimmed;
+
+    const openIndex = trimmed.indexOf('(', ifMatch.index);
+    if (openIndex < 0) return trimmed;
+
+    const closeIndex = this.findMatchingParen(trimmed, openIndex);
+    if (closeIndex !== trimmed.length - 1) return trimmed;
+
+    const inside = trimmed.slice(openIndex + 1, closeIndex).trim();
+    if (!inside.includes('?') || !inside.includes(':')) return trimmed;
+
+    const args = this.splitTopLevelArgs(inside);
+    if (args.length !== 1) return trimmed;
+    return inside;
+  }
+
   private normalizeExpression(expression: string): string {
     const trimmed = this.sanitizeFormulaInput(this.normalizeText(expression));
     const withIf = trimmed
@@ -199,7 +218,8 @@ export class RequisitionsService {
     const withDecimalDot = withoutExcelPrefix.replace(/(\d)\s*,\s*(\d)/g, '$1.$2');
     const withEq = withDecimalDot.replace(/(?<![<>=!])=(?!=)/g, '==');
     const withEqFunctions = this.rewriteEqualityOperators(withEq);
-    return this.rewriteIfCallsToTernary(withEqFunctions);
+    const withTernary = this.rewriteIfCallsToTernary(withEqFunctions);
+    return this.unwrapMalformedIfWrapper(withTernary);
   }
 
   private rewriteEqualityOperators(expression: string): string {
@@ -548,8 +568,12 @@ export class RequisitionsService {
       },
     );
 
+    const expressionForMath = this.unwrapMalformedIfWrapper(
+      this.rewriteEqualityOperators(expressionWithTokens),
+    );
+
     try {
-      const parsed = this.parseAstWithLazyIf(expressionWithTokens);
+      const parsed = this.parseAstWithLazyIf(expressionForMath);
       const compiled = parsed.compile();
       return compiled.evaluate(scope as any);
     } catch (error: any) {
