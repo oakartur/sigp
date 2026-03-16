@@ -567,16 +567,23 @@ export class RequisitionsService {
       },
     );
 
-    const expressionForMath = this.unwrapMalformedIfWrapper(
-      this.rewriteEqualityOperators(expressionWithTokens),
-    );
+    const expressionForMath = this.unwrapMalformedIfWrapper(this.rewriteEqualityOperators(expressionWithTokens));
+    const expressionFallback = this.unwrapMalformedIfWrapper(this.rewriteIfCallsToTernary(expressionForMath));
 
     try {
       const parsed = this.parseAstWithLazyIf(expressionForMath);
       const compiled = parsed.compile();
       return compiled.evaluate(scope as any);
     } catch (error: any) {
-      throw new BadRequestException(`Erro ao avaliar formula em ${context}: ${error?.message || 'erro desconhecido'}`);
+      try {
+        const parsedFallback = this.parseAstWithLazyIf(expressionFallback);
+        const compiledFallback = parsedFallback.compile();
+        return compiledFallback.evaluate(scope as any);
+      } catch (fallbackError: any) {
+        throw new BadRequestException(
+          `Erro ao avaliar formula em ${context}: ${fallbackError?.message || error?.message || 'erro desconhecido'}`,
+        );
+      }
     }
   }
 

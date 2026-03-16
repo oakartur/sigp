@@ -1085,9 +1085,8 @@ export class CatalogService {
       },
     );
 
-    const expressionForMath = this.unwrapMalformedIfWrapper(
-      this.rewriteEqualityOperators(expressionWithTokens),
-    );
+    const expressionForMath = this.unwrapMalformedIfWrapper(this.rewriteEqualityOperators(expressionWithTokens));
+    const expressionFallback = this.unwrapMalformedIfWrapper(this.rewriteIfCallsToTernary(expressionForMath));
 
     tokenBindings.forEach((value, key) => {
       scope[key] = value;
@@ -1098,7 +1097,13 @@ export class CatalogService {
     try {
       ast = this.parseAstWithLazyIf(expressionForMath);
     } catch (error: any) {
-      parseError = this.normalizeNullable(error?.message || 'erro ao interpretar formula');
+      try {
+        ast = this.parseAstWithLazyIf(expressionFallback);
+      } catch (fallbackError: any) {
+        parseError = this.normalizeNullable(
+          fallbackError?.message || error?.message || 'erro ao interpretar formula',
+        );
+      }
     }
 
     const symbols = new Set<string>();
@@ -1182,7 +1187,13 @@ export class CatalogService {
         const compiled = ast.compile();
         result = compiled.evaluate(scope as any);
       } catch (error: any) {
-        evaluationError = error?.message || 'erro ao avaliar formula';
+        try {
+          const fallbackAst = this.parseAstWithLazyIf(expressionFallback);
+          const fallbackCompiled = fallbackAst.compile();
+          result = fallbackCompiled.evaluate(scope as any);
+        } catch (fallbackError: any) {
+          evaluationError = fallbackError?.message || error?.message || 'erro ao avaliar formula';
+        }
       }
     }
 
