@@ -143,8 +143,15 @@ export class ProjectHeaderFieldsService {
       .replace(/\bou\s*\(/gi, 'or(')
       .replace(/\be\s*\(/gi, 'and(')
       .replace(/;/g, ',');
-    const withoutExcelPrefix = withIf.replace(/^\s*=\s*/, '');
-    return withoutExcelPrefix.replace(/(?<![<>=!])=(?!=)/g, '==');
+    const withFunctionAliases = withIf
+      .replace(/\bsoma\s*\(/gi, 'soma(')
+      .replace(/\barredondar\s*\(/gi, 'arred(')
+      .replace(/\barred\s*\(/gi, 'arred(')
+      .replace(/\binteiro\s*\(/gi, 'inteiro(')
+      .replace(/\bint\s*\(/gi, 'int(');
+    const withoutExcelPrefix = withFunctionAliases.replace(/^\s*=\s*/, '');
+    const withDecimalDot = withoutExcelPrefix.replace(/(\d)\s*,\s*(\d)/g, '$1.$2');
+    return withDecimalDot.replace(/(?<![<>=!])=(?!=)/g, '==');
   }
 
   private validateFormulaSyntax(formula: string) {

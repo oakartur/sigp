@@ -44,8 +44,15 @@ export class CatalogService {
       .replace(/\bou\s*\(/gi, 'or(')
       .replace(/\be\s*\(/gi, 'and(')
       .replace(/;/g, ',');
-    const withoutExcelPrefix = withIf.replace(/^\s*=\s*/, '');
-    const withEq = withoutExcelPrefix.replace(/(?<![<>=!])=(?!=)/g, '==');
+    const withFunctionAliases = withIf
+      .replace(/\bsoma\s*\(/gi, 'soma(')
+      .replace(/\barredondar\s*\(/gi, 'arred(')
+      .replace(/\barred\s*\(/gi, 'arred(')
+      .replace(/\binteiro\s*\(/gi, 'inteiro(')
+      .replace(/\bint\s*\(/gi, 'int(');
+    const withoutExcelPrefix = withFunctionAliases.replace(/^\s*=\s*/, '');
+    const withDecimalDot = withoutExcelPrefix.replace(/(\d)\s*,\s*(\d)/g, '$1.$2');
+    const withEq = withDecimalDot.replace(/(?<![<>=!])=(?!=)/g, '==');
     return this.rewriteEqualityOperators(withEq);
   }
 
@@ -758,6 +765,7 @@ export class CatalogService {
     if (/\bse\s*\(/i.test(original) || /\bif\s*\(/i.test(normalized)) commands.add('se()');
     if (/\bou\s*\(/i.test(original) || /\bor\s*\(/i.test(normalized)) commands.add('ou()');
     if (/\be\s*\(/i.test(original) || /\band\s*\(/i.test(normalized)) commands.add('e()');
+    if (/\bsoma\s*\(/i.test(original) || /\bsum\s*\(/i.test(normalized)) commands.add('soma()');
     if (/\barred\s*\(/i.test(original) || /\barred\s*\(/i.test(normalized)) commands.add('arred()');
     if (/\binteiro\s*\(/i.test(original) || /\bint\s*\(/i.test(normalized)) commands.add('inteiro()');
 
@@ -798,9 +806,20 @@ export class CatalogService {
       e: (...args: unknown[]) => args.every((value) => Boolean(value)),
       or: (...args: unknown[]) => args.some((value) => Boolean(value)),
       ou: (...args: unknown[]) => args.some((value) => Boolean(value)),
+      soma: (...args: unknown[]) => args.reduce((acc: number, item) => acc + this.toFormulaNumber(item), 0),
+      SOMA: (...args: unknown[]) => args.reduce((acc: number, item) => acc + this.toFormulaNumber(item), 0),
+      sum: (...args: unknown[]) => args.reduce((acc: number, item) => acc + this.toFormulaNumber(item), 0),
       inteiro: (value: unknown) => Math.trunc(this.toFormulaNumber(value)),
+      INTEIRO: (value: unknown) => Math.trunc(this.toFormulaNumber(value)),
       int: (value: unknown) => Math.trunc(this.toFormulaNumber(value)),
       arred: (value: unknown, decimals?: unknown) => {
+        const base = this.toFormulaNumber(value);
+        if (decimals === undefined) return Math.trunc(base);
+        const precision = Math.trunc(this.toFormulaNumber(decimals));
+        const factor = Math.pow(10, precision);
+        return Math.round(base * factor) / factor;
+      },
+      ARRED: (value: unknown, decimals?: unknown) => {
         const base = this.toFormulaNumber(value);
         if (decimals === undefined) return Math.trunc(base);
         const precision = Math.trunc(this.toFormulaNumber(decimals));
@@ -907,7 +926,11 @@ export class CatalogService {
         symbols.add(name);
       });
     } else {
-      const rawCandidates = expressionWithTokens.match(/\b[A-Za-z_][A-Za-z0-9_]*\b/g) || [];
+      const expressionWithoutStrings = expressionWithTokens.replace(
+        /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g,
+        ' ',
+      );
+      const rawCandidates = expressionWithoutStrings.match(/\b[A-Za-z_][A-Za-z0-9_]*\b/g) || [];
       const reserved = new Set([
         'if',
         'se',
@@ -915,6 +938,8 @@ export class CatalogService {
         'or',
         'e',
         'ou',
+        'soma',
+        'sum',
         'inteiro',
         'int',
         'arred',
@@ -927,7 +952,7 @@ export class CatalogService {
 
       for (const candidate of rawCandidates) {
         if (candidate.startsWith('__token_')) continue;
-        if (reserved.has(candidate)) continue;
+        if (reserved.has(candidate.toLowerCase())) continue;
         symbols.add(candidate);
       }
     }
