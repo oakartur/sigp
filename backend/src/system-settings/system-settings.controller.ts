@@ -11,6 +11,10 @@ type ExportSelectionBody = {
   includeProjectsAndActiveVersions?: boolean;
 };
 
+type ImportSettingsBody = ExportSelectionBody & {
+  payload?: unknown;
+};
+
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Controller('settings')
 export class SystemSettingsController {
@@ -23,6 +27,17 @@ export class SystemSettingsController {
       includeCatalog: Boolean(body?.includeCatalog),
       includeProjectHeaderFields: Boolean(body?.includeProjectHeaderFields),
       includeProjectsAndActiveVersions: Boolean(body?.includeProjectsAndActiveVersions),
+    });
+  }
+
+  @Roles(Role.ADMIN)
+  @Post('import')
+  importSettings(@Body() body: ImportSettingsBody) {
+    return this.systemSettingsService.importSettings({
+      includeCatalog: Boolean(body?.includeCatalog),
+      includeProjectHeaderFields: Boolean(body?.includeProjectHeaderFields),
+      includeProjectsAndActiveVersions: Boolean(body?.includeProjectsAndActiveVersions),
+      payload: body?.payload,
     });
   }
 }

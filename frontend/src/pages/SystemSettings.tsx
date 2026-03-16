@@ -18,7 +18,12 @@ import {
   Toolbar,
   Typography,
 } from '@mui/material';
-import { ArrowBack as ArrowBackIcon, Download as DownloadIcon, Settings as SettingsIcon } from '@mui/icons-material';
+import {
+  ArrowBack as ArrowBackIcon,
+  Download as DownloadIcon,
+  Settings as SettingsIcon,
+  UploadFile as UploadFileIcon,
+} from '@mui/icons-material';
 import { api } from '../context/AuthContext';
 
 type ExportSelection = {
@@ -33,19 +38,99 @@ const defaultSelection: ExportSelection = {
   includeProjectsAndActiveVersions: true,
 };
 
+type ImportResponse = {
+  summary?: {
+    catalog?: {
+      localsCreated?: number;
+      operationsCreated?: number;
+      equipmentsCreated?: number;
+      updated?: number;
+      skipped?: number;
+    };
+    projectHeaderFields?: {
+      created?: number;
+      updated?: number;
+      skipped?: number;
+    };
+    projectsAndActiveVersions?: {
+      projectsCreated?: number;
+      projectsUpdated?: number;
+      requisitionsCreated?: number;
+      requisitionsUpdated?: number;
+      projectConfigsCreated?: number;
+      projectConfigsUpdated?: number;
+      projectConfigsSkipped?: number;
+      itemsCreated?: number;
+      itemsUpdated?: number;
+      itemsSkipped?: number;
+    };
+  };
+};
+
+function buildImportResultMessage(data: ImportResponse): string {
+  const catalog = data.summary?.catalog;
+  const fields = data.summary?.projectHeaderFields;
+  const projects = data.summary?.projectsAndActiveVersions;
+
+  if (!catalog && !fields && !projects) {
+    return 'Importacao concluida.';
+  }
+
+  const lines = ['Importacao concluida.'];
+
+  if (catalog) {
+    lines.push(
+      `Catalogo: locais +${catalog.localsCreated ?? 0}, operacoes +${catalog.operationsCreated ?? 0}, equipamentos +${catalog.equipmentsCreated ?? 0}, atualizados ${catalog.updated ?? 0}, ignorados ${catalog.skipped ?? 0}.`,
+    );
+  }
+
+  if (fields) {
+    lines.push(
+      `Configuracoes de Projeto: criados ${fields.created ?? 0}, atualizados ${fields.updated ?? 0}, ignorados ${fields.skipped ?? 0}.`,
+    );
+  }
+
+  if (projects) {
+    lines.push(
+      `Projetos/Versoes: projetos +${projects.projectsCreated ?? 0} (${projects.projectsUpdated ?? 0} atualizados), requisicoes +${projects.requisitionsCreated ?? 0} (${projects.requisitionsUpdated ?? 0} atualizadas), configs +${projects.projectConfigsCreated ?? 0} (${projects.projectConfigsUpdated ?? 0} atualizadas), itens +${projects.itemsCreated ?? 0} (${projects.itemsUpdated ?? 0} atualizados).`,
+    );
+  }
+
+  return lines.join('\n');
+}
+
 export default function SystemSettings() {
   const navigate = useNavigate();
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [selection, setSelection] = useState<ExportSelection>(defaultSelection);
+  const [exportSelection, setExportSelection] = useState<ExportSelection>(defaultSelection);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importSelection, setImportSelection] = useState<ExportSelection>(defaultSelection);
+  const [importFile, setImportFile] = useState<File | null>(null);
 
   const canExport = useMemo(
-    () => selection.includeCatalog || selection.includeProjectHeaderFields || selection.includeProjectsAndActiveVersions,
-    [selection],
+    () =>
+      exportSelection.includeCatalog ||
+      exportSelection.includeProjectHeaderFields ||
+      exportSelection.includeProjectsAndActiveVersions,
+    [exportSelection],
   );
 
-  const toggleSelection = (field: keyof ExportSelection) => {
-    setSelection((prev) => ({ ...prev, [field]: !prev[field] }));
+  const canImport = useMemo(
+    () =>
+      importSelection.includeCatalog ||
+      importSelection.includeProjectHeaderFields ||
+      importSelection.includeProjectsAndActiveVersions,
+    [importSelection],
+  );
+
+  const toggleExportSelection = (field: keyof ExportSelection) => {
+    setExportSelection((prev) => ({ ...prev, [field]: !prev[field] }));
+  };
+
+  const toggleImportSelection = (field: keyof ExportSelection) => {
+    setImportSelection((prev) => ({ ...prev, [field]: !prev[field] }));
   };
 
   const handleExport = async () => {
@@ -53,7 +138,7 @@ export default function SystemSettings() {
 
     try {
       setExporting(true);
-      const response = await api.post('/settings/export', selection);
+      const response = await api.post('/settings/export', exportSelection);
 
       const now = new Date();
       const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(
@@ -79,6 +164,37 @@ export default function SystemSettings() {
       alert('Erro ao exportar configuracoes.');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!canImport || !importFile) return;
+
+    let parsedPayload: unknown;
+    try {
+      const fileContent = await importFile.text();
+      parsedPayload = JSON.parse(fileContent);
+    } catch (error) {
+      console.error('Failed to parse import file', error);
+      alert('Arquivo de importacao invalido. Use um JSON gerado na exportacao.');
+      return;
+    }
+
+    try {
+      setImporting(true);
+      const response = await api.post('/settings/import', {
+        ...importSelection,
+        payload: parsedPayload,
+      });
+
+      alert(buildImportResultMessage(response.data as ImportResponse));
+      setImportDialogOpen(false);
+      setImportFile(null);
+    } catch (error) {
+      console.error('Failed to import settings', error);
+      alert('Erro ao importar configuracoes.');
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -116,8 +232,17 @@ export default function SystemSettings() {
               Exportar todas as configuracoes
             </Button>
 
+            <Button
+              variant="outlined"
+              startIcon={<UploadFileIcon />}
+              onClick={() => setImportDialogOpen(true)}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              Importar configuracoes
+            </Button>
+
             <Typography variant="caption" color="text.secondary">
-              A exportacao gera um arquivo JSON com os blocos selecionados.
+              A exportacao gera um arquivo JSON. A importacao aplica merge sem duplicar os mesmos registros.
             </Typography>
           </Stack>
         </Paper>
@@ -132,15 +257,18 @@ export default function SystemSettings() {
           <FormGroup>
             <FormControlLabel
               control={
-                <Checkbox checked={selection.includeCatalog} onChange={() => toggleSelection('includeCatalog')} />
+                <Checkbox
+                  checked={exportSelection.includeCatalog}
+                  onChange={() => toggleExportSelection('includeCatalog')}
+                />
               }
               label="Catalogo (Locais, Operacoes e Equipamentos)"
             />
             <FormControlLabel
               control={
                 <Checkbox
-                  checked={selection.includeProjectHeaderFields}
-                  onChange={() => toggleSelection('includeProjectHeaderFields')}
+                  checked={exportSelection.includeProjectHeaderFields}
+                  onChange={() => toggleExportSelection('includeProjectHeaderFields')}
                 />
               }
               label="Configuracoes de Projeto (campos do cabecalho)"
@@ -148,8 +276,8 @@ export default function SystemSettings() {
             <FormControlLabel
               control={
                 <Checkbox
-                  checked={selection.includeProjectsAndActiveVersions}
-                  onChange={() => toggleSelection('includeProjectsAndActiveVersions')}
+                  checked={exportSelection.includeProjectsAndActiveVersions}
+                  onChange={() => toggleExportSelection('includeProjectsAndActiveVersions')}
                 />
               }
               label="Projetos e versoes ativas (nao concluidas)"
@@ -162,6 +290,68 @@ export default function SystemSettings() {
           </Button>
           <Button variant="contained" onClick={handleExport} disabled={!canExport || exporting}>
             {exporting ? 'Exportando...' : 'Exportar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <SettingsIcon fontSize="small" />
+          Importar configuracoes
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <Button component="label" variant="outlined" startIcon={<UploadFileIcon />} sx={{ alignSelf: 'flex-start' }}>
+              Selecionar arquivo JSON
+              <input
+                hidden
+                type="file"
+                accept=".json,application/json"
+                onChange={(event) => setImportFile(event.target.files?.[0] ?? null)}
+              />
+            </Button>
+
+            <Typography variant="body2" color="text.secondary">
+              {importFile ? `Arquivo selecionado: ${importFile.name}` : 'Nenhum arquivo selecionado.'}
+            </Typography>
+
+            <FormGroup>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={importSelection.includeCatalog}
+                    onChange={() => toggleImportSelection('includeCatalog')}
+                  />
+                }
+                label="Catalogo (Locais, Operacoes e Equipamentos)"
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={importSelection.includeProjectHeaderFields}
+                    onChange={() => toggleImportSelection('includeProjectHeaderFields')}
+                  />
+                }
+                label="Configuracoes de Projeto (campos do cabecalho)"
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={importSelection.includeProjectsAndActiveVersions}
+                    onChange={() => toggleImportSelection('includeProjectsAndActiveVersions')}
+                  />
+                }
+                label="Projetos e versoes ativas (nao concluidas)"
+              />
+            </FormGroup>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button color="inherit" onClick={() => setImportDialogOpen(false)} disabled={importing}>
+            Cancelar
+          </Button>
+          <Button variant="contained" onClick={handleImport} disabled={!canImport || !importFile || importing}>
+            {importing ? 'Importando...' : 'Importar'}
           </Button>
         </DialogActions>
       </Dialog>
