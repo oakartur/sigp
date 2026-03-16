@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FormulasService } from '../formulas/formulas.service';
-import { Prisma, ProjectHeaderFieldType, ReqStatus, RequisitionItem } from '@prisma/client';
+import { Prisma, ProjectHeaderFieldType, ReqStatus, RequisitionItem, Role } from '@prisma/client';
 import * as math from 'mathjs';
 
 type ConfigWithField = Prisma.RequisitionProjectConfigGetPayload<{
@@ -175,10 +175,7 @@ export class RequisitionsService {
         where: { id: requisitionId },
         data: {
           status: statusFromConfig,
-          ...(statusFromConfig === ReqStatus.COMPLETED ? { isReadOnly: true } : {}),
-          ...(statusFromConfig !== ReqStatus.COMPLETED && requisition.status === ReqStatus.COMPLETED
-            ? { isReadOnly: false }
-            : {}),
+          isReadOnly: statusFromConfig === ReqStatus.COMPLETED,
         },
       });
       currentStatus = statusFromConfig;
@@ -772,11 +769,42 @@ export class RequisitionsService {
     });
   }
 
-  async upsertProjectConfigs(reqId: string, configs: Array<{ fieldId: string; value: string }>) {
+  async upsertProjectConfigs(reqId: string, configs: Array<{ fieldId: string; value: string }>, actorRole?: Role) {
     const requisition = await this.prisma.requisition.findUnique({ where: { id: reqId } });
     if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
     if (requisition.isReadOnly) {
-      throw new BadRequestException('Requisicao em modo somente leitura.');
+      const isAdmin = actorRole === Role.ADMIN;
+      if (!isAdmin) {
+        throw new BadRequestException('Requisicao em modo somente leitura.');
+      }
+
+      const currentConfigs = await this.prisma.requisitionProjectConfig.findMany({
+        where: {
+          requisitionId: reqId,
+          field: { isActive: true },
+        },
+        include: { field: true },
+      });
+      const currentByFieldId = new Map(currentConfigs.map((config) => [config.fieldId, config]));
+
+      const changedConfigs = configs.filter((config) => {
+        const current = currentByFieldId.get(config.fieldId);
+        const currentValue = this.normalizeText(current?.value);
+        const nextValue = this.normalizeText(config.value);
+        return currentValue !== nextValue;
+      });
+
+      const hasNonStatusChange = changedConfigs.some((config) => {
+        const current = currentByFieldId.get(config.fieldId);
+        if (!current) return true;
+        return !this.isStatusProjectField(current.field.label);
+      });
+
+      if (hasNonStatusChange) {
+        throw new BadRequestException(
+          'Requisicao em modo somente leitura. ADMIN pode alterar apenas o campo "Status da Requisicao".',
+        );
+      }
     }
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {

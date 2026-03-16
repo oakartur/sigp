@@ -51,8 +51,9 @@ export class RequisitionsController {
   upsertProjectConfigs(
     @Param('reqId') reqId: string,
     @Body() body: { configs: Array<{ fieldId: string; value: string }> },
+    @Req() req: any,
   ) {
-    return this.requisitionsService.upsertProjectConfigs(reqId, body?.configs ?? []);
+    return this.requisitionsService.upsertProjectConfigs(reqId, body?.configs ?? [], req?.user?.role);
   }
 
   @Roles(Role.QUANTIFIER, Role.ADMIN)
