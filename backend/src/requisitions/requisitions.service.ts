@@ -702,12 +702,33 @@ export class RequisitionsService {
     const normalized = this.normalizeText(String(result ?? ''));
     if (!normalized) return 0;
 
-    const parsed = Number(normalized.replace(',', '.'));
-    if (Number.isNaN(parsed)) {
-      throw new BadRequestException(`Formula em ${context} deve retornar numero.`);
+    const parseSafeNumber = (raw: string): number | null => {
+      const parsedValue = Number(raw.replace(',', '.'));
+      if (Number.isNaN(parsedValue) || !Number.isFinite(parsedValue)) return null;
+      return parsedValue;
+    };
+
+    const directNumber = parseSafeNumber(normalized);
+    if (directNumber !== null) {
+      return directNumber;
     }
 
-    return parsed;
+    // Permite "quantidade textual" quando houver numero embutido, ex.: "EST. AGP (06)" -> 6.
+    const parenthesisMatch = normalized.match(/\(([-+]?\d+(?:[.,]\d+)?)\)/);
+    if (parenthesisMatch?.[1]) {
+      const parsedParenthesis = parseSafeNumber(parenthesisMatch[1]);
+      if (parsedParenthesis !== null) return parsedParenthesis;
+    }
+
+    const firstNumberMatch = normalized.match(/[-+]?\d+(?:[.,]\d+)?/);
+    if (firstNumberMatch?.[0]) {
+      const parsedFirstNumber = parseSafeNumber(firstNumberMatch[0]);
+      if (parsedFirstNumber !== null) return parsedFirstNumber;
+    }
+
+    throw new BadRequestException(
+      `Formula em ${context} deve retornar numero ou texto contendo numero (ex.: "EST. AGP (06)").`,
+    );
   }
 
   private async recomputeComputedProjectConfigs(tx: Prisma.TransactionClient, requisitionId: string) {
