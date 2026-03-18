@@ -354,8 +354,18 @@ export default function RequisitionGrid() {
     });
   }, [rows, filterLocal, filterOperation, searchTerm]);
 
-  const getFinalQuantity = (row: RequisitionItemRow) =>
-    row.manualQuantity ?? row.overrideValue ?? row.calculatedValue ?? 0;
+  const getFinalQuantity = (row: RequisitionItemRow) => {
+    if (typeof row.overrideValue === 'number' && Number.isFinite(row.overrideValue)) {
+      return row.overrideValue;
+    }
+
+    const autoQty =
+      typeof row.calculatedValue === 'number' && Number.isFinite(row.calculatedValue) ? row.calculatedValue : 0;
+    const manualAdjustment =
+      typeof row.manualQuantity === 'number' && Number.isFinite(row.manualQuantity) ? row.manualQuantity : 0;
+
+    return autoQty + manualAdjustment;
+  };
 
   const selectedIdsSet = useMemo(
     () => new Set(Array.from(rowSelectionModel.ids).map((id) => String(id))),
@@ -389,7 +399,7 @@ export default function RequisitionGrid() {
     { field: 'equipmentName', headerName: 'Equipamento', flex: 1, minWidth: 280 },
     {
       field: 'manualQuantity',
-      headerName: 'Qtd Manual',
+      headerName: 'Ajuste Manual',
       width: 130,
       editable: true,
       type: 'number',

@@ -46,7 +46,14 @@ export class ExcelProcessor extends WorkerHost {
     ];
 
     for (const item of reqData.items) {
-      const finalQtd = item.manualQuantity ?? item.overrideValue ?? item.calculatedValue ?? 0;
+      const autoQtd =
+        typeof item.calculatedValue === 'number' && Number.isFinite(item.calculatedValue) ? item.calculatedValue : 0;
+      const manualAdjustment =
+        typeof item.manualQuantity === 'number' && Number.isFinite(item.manualQuantity) ? item.manualQuantity : 0;
+      const finalQtd =
+        typeof item.overrideValue === 'number' && Number.isFinite(item.overrideValue)
+          ? item.overrideValue
+          : autoQtd + manualAdjustment;
       sheet.addRow({
         project: reqData.project.name,
         version: reqData.version,

@@ -371,11 +371,16 @@ export class RequisitionsService {
     manualQuantity?: number | null;
     calculatedValue?: number | null;
   }): number {
-    const candidates = [item.overrideValue, item.manualQuantity, item.calculatedValue];
-    for (const candidate of candidates) {
-      if (typeof candidate === 'number' && Number.isFinite(candidate)) return candidate;
+    if (typeof item.overrideValue === 'number' && Number.isFinite(item.overrideValue)) {
+      return item.overrideValue;
     }
-    return 0;
+
+    const autoQuantity =
+      typeof item.calculatedValue === 'number' && Number.isFinite(item.calculatedValue) ? item.calculatedValue : 0;
+    const manualAdjustment =
+      typeof item.manualQuantity === 'number' && Number.isFinite(item.manualQuantity) ? item.manualQuantity : 0;
+
+    return autoQuantity + manualAdjustment;
   }
 
   private isStatusProjectField(label: string): boolean {
@@ -977,16 +982,22 @@ export class RequisitionsService {
 
     if (missingEquipments.length > 0) {
       await tx.requisitionItem.createMany({
-        data: missingEquipments.map((equipment) => ({
-          requisitionId,
-          equipmentCatalogId: equipment.id,
-          localName: equipment.operation.local.name,
-          operationName: equipment.operation.name,
-          equipmentCode: equipment.code,
-          equipmentName: equipment.description,
-          manualQuantity: equipment.baseQuantity,
-          status: 'PENDING' as const,
-        })),
+        data: missingEquipments.map((equipment) => {
+          const hasAutoRule =
+            Boolean(equipment.autoConfigFieldId) || this.normalizeText(equipment.autoFormulaExpression).length > 0;
+
+          return {
+            requisitionId,
+            equipmentCatalogId: equipment.id,
+            localName: equipment.operation.local.name,
+            operationName: equipment.operation.name,
+            equipmentCode: equipment.code,
+            equipmentName: equipment.description,
+            // Requisito: em itens auto, Qtd Manual e apenas ajuste.
+            manualQuantity: hasAutoRule ? 0 : equipment.baseQuantity,
+            status: 'PENDING' as const,
+          };
+        }),
       });
     }
 
@@ -1015,7 +1026,10 @@ export class RequisitionsService {
       if (!equipment) continue;
 
       const shouldBackfillManualQuantity = item.manualQuantity === null;
-      const nextManualQuantity = shouldBackfillManualQuantity ? equipment.baseQuantity : item.manualQuantity;
+      const hasAutoRule =
+        Boolean(equipment.autoConfigFieldId) || this.normalizeText(equipment.autoFormulaExpression).length > 0;
+      const fallbackManualQuantity = hasAutoRule ? 0 : equipment.baseQuantity;
+      const nextManualQuantity = shouldBackfillManualQuantity ? fallbackManualQuantity : item.manualQuantity;
 
       const needsUpdate =
         item.localName !== equipment.operation.local.name ||
@@ -1309,7 +1323,10 @@ export class RequisitionsService {
 
     const typedItems = items as Array<any>;
     const quantityByItemId = new Map<string, number>();
-    const initialQuantityByItemId = new Map<string, number>();
+    const calculatedByItemId = new Map<string, number>();
+    const initialCalculatedByItemId = new Map<string, number>();
+    const manualAdjustmentByItemId = new Map<string, number>();
+    const overrideByItemId = new Map<string, number | null>();
     const sourceTypeByItemId = new Map<string, QuantitySourceType>();
     const initialSourceTypeByItemId = new Map<string, QuantitySourceType>();
     const sourceNoteByItemId = new Map<string, string | null>();
@@ -1327,16 +1344,27 @@ export class RequisitionsService {
     };
 
     for (const item of typedItems) {
-      const initial = this.getEffectiveItemQuantity(item);
-      quantityByItemId.set(item.id, initial);
-      initialQuantityByItemId.set(item.id, initial);
+      const initialCalculated =
+        typeof item.calculatedValue === 'number' && Number.isFinite(item.calculatedValue) ? item.calculatedValue : 0;
+      const manualAdjustment =
+        typeof item.manualQuantity === 'number' && Number.isFinite(item.manualQuantity) ? item.manualQuantity : 0;
+      const overrideValue =
+        typeof item.overrideValue === 'number' && Number.isFinite(item.overrideValue) ? item.overrideValue : null;
+
+      calculatedByItemId.set(item.id, initialCalculated);
+      initialCalculatedByItemId.set(item.id, initialCalculated);
+      manualAdjustmentByItemId.set(item.id, manualAdjustment);
+      overrideByItemId.set(item.id, overrideValue);
+
+      const initialEffective = this.getEffectiveItemQuantity(item);
+      quantityByItemId.set(item.id, initialEffective);
       const initialSourceType = item.quantitySourceType ?? QuantitySourceType.PURCHASE;
       sourceTypeByItemId.set(item.id, initialSourceType);
       initialSourceTypeByItemId.set(item.id, initialSourceType);
       const initialSourceNote = this.normalizeText(item.quantitySourceNote) || null;
       sourceNoteByItemId.set(item.id, initialSourceNote);
       initialSourceNoteByItemId.set(item.id, initialSourceNote);
-      registerItemQuantity(item, initial);
+      registerItemQuantity(item, initialEffective);
     }
 
     const maxPasses = Math.max(typedItems.length, 1) + 2;
@@ -1404,20 +1432,29 @@ export class RequisitionsService {
         if (!resolvedQuantity) continue;
 
         const autoQuantity = resolvedQuantity.quantity;
+        calculatedByItemId.set(item.id, autoQuantity);
+
+        const manualAdjustment = manualAdjustmentByItemId.get(item.id) ?? 0;
+        const overrideValue = overrideByItemId.get(item.id);
+        const nextEffectiveQuantity =
+          typeof overrideValue === 'number' && Number.isFinite(overrideValue)
+            ? overrideValue
+            : autoQuantity + manualAdjustment;
+
         const previous = quantityByItemId.get(item.id) ?? 0;
         const previousSourceType = sourceTypeByItemId.get(item.id) ?? QuantitySourceType.PURCHASE;
         const previousSourceNote = sourceNoteByItemId.get(item.id) ?? null;
 
         if (
-          Math.abs(previous - autoQuantity) > 1e-9 ||
+          Math.abs(previous - nextEffectiveQuantity) > 1e-9 ||
           previousSourceType !== resolvedQuantity.sourceType ||
           previousSourceNote !== resolvedQuantity.sourceNote
         ) {
           hasChanges = true;
-          quantityByItemId.set(item.id, autoQuantity);
+          quantityByItemId.set(item.id, nextEffectiveQuantity);
           sourceTypeByItemId.set(item.id, resolvedQuantity.sourceType);
           sourceNoteByItemId.set(item.id, resolvedQuantity.sourceNote);
-          registerItemQuantity(item, autoQuantity);
+          registerItemQuantity(item, nextEffectiveQuantity);
         }
       }
 
@@ -1430,23 +1467,22 @@ export class RequisitionsService {
     }
 
     for (const item of typedItems) {
-      const nextQuantity = quantityByItemId.get(item.id);
-      const initialQuantity = initialQuantityByItemId.get(item.id);
+      const nextCalculated = calculatedByItemId.get(item.id);
+      const initialCalculated = initialCalculatedByItemId.get(item.id);
       const nextSourceType = sourceTypeByItemId.get(item.id) ?? QuantitySourceType.PURCHASE;
       const initialSourceType = initialSourceTypeByItemId.get(item.id) ?? QuantitySourceType.PURCHASE;
       const nextSourceNote = sourceNoteByItemId.get(item.id) ?? null;
       const initialSourceNote = initialSourceNoteByItemId.get(item.id) ?? null;
-      if (nextQuantity === undefined || initialQuantity === undefined) continue;
-      const quantityUnchanged = Math.abs(nextQuantity - initialQuantity) <= 1e-9;
+      if (nextCalculated === undefined || initialCalculated === undefined) continue;
+      const calculatedUnchanged = Math.abs(nextCalculated - initialCalculated) <= 1e-9;
       const sourceUnchanged = nextSourceType === initialSourceType && nextSourceNote === initialSourceNote;
-      if (quantityUnchanged && sourceUnchanged) continue;
+      if (calculatedUnchanged && sourceUnchanged) continue;
 
-      // Requisito: auto preenchimento deve sobrepor a quantidade da requisicao.
+      // Requisito: auto preenchimento atualiza apenas Qtd Auto.
       await this.prisma.requisitionItem.update({
         where: { id: item.id },
         data: {
-          calculatedValue: nextQuantity,
-          manualQuantity: nextQuantity,
+          calculatedValue: nextCalculated,
           quantitySourceType: nextSourceType,
           quantitySourceNote: nextSourceNote,
           versionLock: { increment: 1 },
@@ -1477,7 +1513,12 @@ export class RequisitionsService {
         operationName: payload.operationName,
         equipmentCode: payload.equipmentCode,
         equipmentName: payload.equipmentName,
-        manualQuantity: payload.manualQuantity ? Number(payload.manualQuantity) : null,
+        manualQuantity:
+          payload.manualQuantity === null ||
+          payload.manualQuantity === undefined ||
+          String(payload.manualQuantity).trim() === ''
+            ? null
+            : Number(payload.manualQuantity),
         formulaId: payload.formulaId,
         variablesPayload: payload.variables ? payload.variables : undefined,
         calculatedValue,
@@ -1504,8 +1545,6 @@ export class RequisitionsService {
       where: { id: itemId },
       data: {
         manualQuantity: manualQuantity === null ? null : Number(manualQuantity),
-        quantitySourceType: QuantitySourceType.PURCHASE,
-        quantitySourceNote: null,
         versionLock: { increment: 1 },
       },
     });
@@ -1521,8 +1560,6 @@ export class RequisitionsService {
       where: { id: itemId },
       data: {
         overrideValue,
-        quantitySourceType: QuantitySourceType.PURCHASE,
-        quantitySourceNote: null,
         versionLock: { increment: 1 },
       },
     });
