@@ -1087,6 +1087,56 @@ export class RequisitionsService {
     }
   }
 
+  private async syncComputerAreasForRequisition(tx: Prisma.TransactionClient, requisitionId: string) {
+    const requisition = await tx.requisition.findUnique({
+      where: { id: requisitionId },
+      select: { id: true, status: true },
+    });
+    if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
+
+    const areas = await tx.computerAreaCatalog.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+
+    const existing = await tx.requisitionComputerArea.findMany({
+      where: { requisitionId },
+      select: { id: true, areaId: true },
+    });
+
+    const activeAreaIds = new Set(areas.map((area) => area.id));
+    const existingAreaIds = new Set(existing.map((item) => item.areaId));
+
+    const missing = areas.filter((area) => !existingAreaIds.has(area.id));
+    if (missing.length > 0) {
+      await tx.requisitionComputerArea.createMany({
+        data: missing.map((area) => ({
+          requisitionId,
+          areaId: area.id,
+          quantity: 0,
+        })),
+      });
+    }
+
+    if (requisition.status === ReqStatus.PENDING) {
+      const staleIds = existing.filter((item) => !activeAreaIds.has(item.areaId)).map((item) => item.id);
+      if (staleIds.length > 0) {
+        await tx.requisitionComputerArea.deleteMany({
+          where: { id: { in: staleIds } },
+        });
+      }
+    }
+
+    return tx.requisitionComputerArea.findMany({
+      where: {
+        requisitionId,
+        area: { isActive: true },
+      },
+      include: { area: true },
+      orderBy: [{ area: { sortOrder: 'asc' } }, { area: { name: 'asc' } }],
+    });
+  }
+
   async createInitialRequisition(projectId: string, version?: string) {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Projeto nao encontrado.');
@@ -1105,6 +1155,7 @@ export class RequisitionsService {
 
       await this.syncProjectConfigs(tx, requisition.id);
       await this.syncCatalogItemsForRequisition(tx, requisition.id);
+      await this.syncComputerAreasForRequisition(tx, requisition.id);
       return requisition;
     });
 
@@ -1185,6 +1236,7 @@ export class RequisitionsService {
 
       await this.syncCatalogItemsForRequisition(tx, newReq.id);
       await this.syncProjectConfigs(tx, newReq.id, req.id);
+      await this.syncComputerAreasForRequisition(tx, newReq.id);
       return newReq;
     });
 
@@ -1234,6 +1286,15 @@ export class RequisitionsService {
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return this.syncProjectConfigs(tx, reqId);
+    });
+  }
+
+  async findComputerAreas(reqId: string) {
+    const requisition = await this.prisma.requisition.findUnique({ where: { id: reqId } });
+    if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      return this.syncComputerAreasForRequisition(tx, reqId);
     });
   }
 
@@ -1332,6 +1393,35 @@ export class RequisitionsService {
     });
   }
 
+  async updateComputerAreaQuantity(rowId: string, quantity: number, currentLock: number) {
+    const row = await this.prisma.requisitionComputerArea.findUnique({
+      where: { id: rowId },
+      include: {
+        requisition: true,
+        area: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Area de computadores nao encontrada.');
+    if (row.versionLock !== currentLock) {
+      throw new ConflictException('Conflito de edicao na area. Atualize a tela.');
+    }
+    if (row.requisition.isReadOnly) {
+      throw new BadRequestException('Requisicao em modo somente leitura.');
+    }
+    if (!Number.isFinite(quantity)) {
+      throw new BadRequestException('Quantidade invalida para area de computadores.');
+    }
+
+    return this.prisma.requisitionComputerArea.update({
+      where: { id: rowId },
+      data: {
+        quantity,
+        versionLock: { increment: 1 },
+      },
+      include: { area: true },
+    });
+  }
+
   async autoFillItemsFromProjectConfigs(reqId: string) {
     const requisition = await this.prisma.requisition.findUnique({ where: { id: reqId } });
     if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
@@ -1339,14 +1429,42 @@ export class RequisitionsService {
       throw new BadRequestException('Requisicao em modo somente leitura.');
     }
 
-    const configs = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const { configs, computerAreas } = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await this.syncCatalogItemsForRequisition(tx, reqId);
-      return this.syncProjectConfigs(tx, reqId);
+      const syncedConfigs = await this.syncProjectConfigs(tx, reqId);
+      const syncedComputerAreas = await this.syncComputerAreasForRequisition(tx, reqId);
+      return {
+        configs: syncedConfigs,
+        computerAreas: syncedComputerAreas,
+      };
     });
 
     const configByFieldId = new Map<string, string>();
     for (const config of configs) {
       configByFieldId.set(config.fieldId, this.normalizeText(config.value));
+    }
+
+    const computerAreaValues = new Map<string, number>();
+    let totalComputers = 0;
+    for (const row of computerAreas as Array<any>) {
+      const areaName = this.normalizeText(row?.area?.name);
+      const quantity = typeof row?.quantity === 'number' && Number.isFinite(row.quantity) ? row.quantity : 0;
+      totalComputers += quantity;
+      if (areaName) {
+        computerAreaValues.set(areaName, quantity);
+      }
+    }
+
+    const computerFormulaVariables: Record<string, unknown> = {
+      'Computadores - Total': totalComputers,
+      'Total Computadores': totalComputers,
+      TotalComputadores: totalComputers,
+      ComputadoresTotal: totalComputers,
+    };
+
+    for (const [areaName, quantity] of computerAreaValues.entries()) {
+      computerFormulaVariables[`Computadores - ${areaName}`] = quantity;
+      computerFormulaVariables[`Area Computadores - ${areaName}`] = quantity;
     }
 
     const items = await this.prisma.requisitionItem.findMany({
@@ -1426,6 +1544,7 @@ export class RequisitionsService {
                 Equipamento: item.equipmentName ?? '',
                 Codigo: item.equipmentCode ?? '',
                 Código: item.equipmentCode ?? '',
+                ...computerFormulaVariables,
               },
               allowUnknownTokensAsLiteral: true,
               quantityResolver: (local: unknown, operation: unknown, equipment: unknown) => {

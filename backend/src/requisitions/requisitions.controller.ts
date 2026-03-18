@@ -46,6 +46,12 @@ export class RequisitionsController {
     return this.requisitionsService.findProjectConfigs(reqId);
   }
 
+  @Roles(Role.QUANTIFIER, Role.MANAGER, Role.AUDITOR, Role.ADMIN)
+  @Get(':reqId/computer-areas')
+  findComputerAreas(@Param('reqId') reqId: string) {
+    return this.requisitionsService.findComputerAreas(reqId);
+  }
+
   @Roles(Role.QUANTIFIER, Role.ADMIN)
   @Put(':reqId/project-configs')
   upsertProjectConfigs(
@@ -75,6 +81,15 @@ export class RequisitionsController {
     @Body() body: { manualQuantity: number | null; currentLock: number },
   ) {
     return this.requisitionsService.updateItemQuantity(itemId, body.manualQuantity, body.currentLock);
+  }
+
+  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Put('computer-areas/:rowId/quantity')
+  updateComputerAreaQuantity(
+    @Param('rowId') rowId: string,
+    @Body() body: { quantity: number; currentLock: number },
+  ) {
+    return this.requisitionsService.updateComputerAreaQuantity(rowId, body.quantity, body.currentLock);
   }
 
   @Roles(Role.ADMIN)

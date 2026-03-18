@@ -12,6 +12,7 @@ import { ProjectHeaderFieldsModule } from './project-header-fields/project-heade
 import { CatalogModule } from './catalog/catalog.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { UsersModule } from './users/users.module';
+import { ComputerAreasModule } from './computer-areas/computer-areas.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { UsersModule } from './users/users.module';
     TasksModule,
     ProjectHeaderFieldsModule,
     CatalogModule,
+    ComputerAreasModule,
     SystemSettingsModule,
     UsersModule,
   ],

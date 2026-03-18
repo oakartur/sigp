@@ -15,6 +15,11 @@ import {
   MenuItem,
   Paper,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   TextField,
   Toolbar,
   Typography,
@@ -52,18 +57,33 @@ interface RequisitionItemRow {
   versionLock: number;
 }
 
+interface RequisitionComputerAreaRow {
+  id: string;
+  quantity: number;
+  versionLock: number;
+  area: {
+    id: string;
+    name: string;
+    sortOrder: number;
+    isActive: boolean;
+  };
+}
+
 export default function RequisitionGrid() {
   const { reqId } = useParams();
   const navigate = useNavigate();
 
   const [rows, setRows] = useState<RequisitionItemRow[]>([]);
   const [configs, setConfigs] = useState<ProjectConfig[]>([]);
+  const [computerAreas, setComputerAreas] = useState<RequisitionComputerAreaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingConfigs, setSavingConfigs] = useState(false);
   const [savingQuantities, setSavingQuantities] = useState(false);
+  const [savingComputerAreas, setSavingComputerAreas] = useState(false);
   const [autoFilling, setAutoFilling] = useState(false);
   const [autoSyncError, setAutoSyncError] = useState<string | null>(null);
   const [quantitySyncError, setQuantitySyncError] = useState<string | null>(null);
+  const [computerAreaSyncError, setComputerAreaSyncError] = useState<string | null>(null);
   const [lastAutoSyncAt, setLastAutoSyncAt] = useState<number | null>(null);
   const [dirtyRowIds, setDirtyRowIds] = useState<string[]>([]);
   const [rowSelectionModel, setRowSelectionModel] = useState<GridRowSelectionModel>({
@@ -76,12 +96,16 @@ export default function RequisitionGrid() {
   const latestConfigsRef = useRef<ProjectConfig[]>([]);
   const autoSyncTimerRef = useRef<number | null>(null);
   const quantitySyncTimerRef = useRef<number | null>(null);
+  const computerAreaSyncTimerRef = useRef<number | null>(null);
   const syncInFlightRef = useRef(false);
   const pendingResyncRef = useRef(false);
   const configDirtyRef = useRef(false);
   const quantitySyncInFlightRef = useRef(false);
   const quantityPendingResyncRef = useRef(false);
   const quantityQueueRef = useRef<Map<string, { manualQuantity: number | null; currentLock: number }>>(new Map());
+  const computerAreaSyncInFlightRef = useRef(false);
+  const computerAreaPendingResyncRef = useRef(false);
+  const computerAreaQueueRef = useRef<Map<string, { quantity: number; currentLock: number }>>(new Map());
 
   const [filterLocal, setFilterLocal] = useState('');
   const [filterOperation, setFilterOperation] = useState('');
@@ -98,6 +122,9 @@ export default function RequisitionGrid() {
       }
       if (quantitySyncTimerRef.current !== null) {
         window.clearTimeout(quantitySyncTimerRef.current);
+      }
+      if (computerAreaSyncTimerRef.current !== null) {
+        window.clearTimeout(computerAreaSyncTimerRef.current);
       }
     };
   }, []);
@@ -123,6 +150,13 @@ export default function RequisitionGrid() {
     return Number.isFinite(parsed) ? parsed : null;
   };
 
+  const normalizeComputerAreaQuantity = (value: unknown): number => {
+    if (value === '' || value === null || value === undefined) return 0;
+    const parsed = Number(String(value).replace(',', '.'));
+    if (!Number.isFinite(parsed)) return 0;
+    return parsed;
+  };
+
   const markRowDirty = (rowId: string, dirty: boolean) => {
     setDirtyRowIds((previous) => {
       const exists = previous.includes(rowId);
@@ -130,6 +164,22 @@ export default function RequisitionGrid() {
       if (!dirty && exists) return previous.filter((id) => id !== rowId);
       return previous;
     });
+  };
+
+  const runAutoFill = async () => {
+    if (!reqId) return;
+    setAutoFilling(true);
+    try {
+      const autoFillResponse = await api.post(`/requisitions/${reqId}/items/auto-fill`);
+      setRows(autoFillResponse.data || []);
+      setAutoSyncError(null);
+      setLastAutoSyncAt(Date.now());
+    } catch (error) {
+      const message = parseApiErrorMessage(error, 'Erro ao recalcular quantidades automaticas.');
+      setAutoSyncError(message);
+    } finally {
+      setAutoFilling(false);
+    }
   };
 
   const flushQuantityQueue = async () => {
@@ -166,22 +216,11 @@ export default function RequisitionGrid() {
     }
 
     if (hasSuccessfulQuantityUpdate) {
-      setAutoFilling(true);
-      try {
-        const autoFillResponse = await api.post(`/requisitions/${reqId}/items/auto-fill`);
-        setRows(autoFillResponse.data || []);
-        setAutoSyncError(null);
-      } catch (error) {
-        const message = parseApiErrorMessage(error, 'Erro ao recalcular quantidades automaticas.');
-        setAutoSyncError(message);
-      } finally {
-        setAutoFilling(false);
-      }
+      await runAutoFill();
     }
 
     quantitySyncInFlightRef.current = false;
     setSavingQuantities(false);
-    setLastAutoSyncAt(Date.now());
 
     if (quantityPendingResyncRef.current || quantityQueueRef.current.size > 0) {
       quantityPendingResyncRef.current = false;
@@ -206,6 +245,70 @@ export default function RequisitionGrid() {
     });
     markRowDirty(row.id, true);
     scheduleQuantitySync();
+  };
+
+  const flushComputerAreaQueue = async () => {
+    if (!reqId) return;
+    if (computerAreaSyncInFlightRef.current) {
+      computerAreaPendingResyncRef.current = true;
+      return;
+    }
+    if (computerAreaQueueRef.current.size === 0) return;
+
+    computerAreaSyncInFlightRef.current = true;
+    setSavingComputerAreas(true);
+    setComputerAreaSyncError(null);
+
+    const queueBatch = Array.from(computerAreaQueueRef.current.entries());
+    computerAreaQueueRef.current.clear();
+    let hasSuccessfulComputerAreaUpdate = false;
+
+    for (const [rowId, payload] of queueBatch) {
+      try {
+        const response = await api.put(`/requisitions/computer-areas/${rowId}/quantity`, {
+          quantity: payload.quantity,
+          currentLock: payload.currentLock,
+        });
+        const updatedRow = response.data as RequisitionComputerAreaRow;
+        setComputerAreas((previous) =>
+          previous.map((row) => (row.id === rowId ? updatedRow : row)),
+        );
+        hasSuccessfulComputerAreaUpdate = true;
+      } catch (error) {
+        const message = parseApiErrorMessage(error, 'Erro ao salvar quantidade de computadores.');
+        setComputerAreaSyncError(message);
+      }
+    }
+
+    if (hasSuccessfulComputerAreaUpdate) {
+      await runAutoFill();
+    }
+
+    computerAreaSyncInFlightRef.current = false;
+    setSavingComputerAreas(false);
+
+    if (computerAreaPendingResyncRef.current || computerAreaQueueRef.current.size > 0) {
+      computerAreaPendingResyncRef.current = false;
+      void flushComputerAreaQueue();
+    }
+  };
+
+  const scheduleComputerAreaSync = () => {
+    if (computerAreaSyncTimerRef.current !== null) {
+      window.clearTimeout(computerAreaSyncTimerRef.current);
+    }
+
+    computerAreaSyncTimerRef.current = window.setTimeout(() => {
+      void flushComputerAreaQueue();
+    }, 450);
+  };
+
+  const enqueueComputerAreaSave = (row: RequisitionComputerAreaRow, quantity: number) => {
+    computerAreaQueueRef.current.set(row.id, {
+      quantity,
+      currentLock: row.versionLock,
+    });
+    scheduleComputerAreaSync();
   };
 
   const performAutoSync = async () => {
@@ -235,10 +338,7 @@ export default function RequisitionGrid() {
       const updatedConfigs = mapProjectConfigs(saveResponse.data || []);
       latestConfigsRef.current = updatedConfigs;
       setConfigs(updatedConfigs);
-
-      const autoFillResponse = await api.post(`/requisitions/${reqId}/items/auto-fill`);
-      setRows(autoFillResponse.data || []);
-      setLastAutoSyncAt(Date.now());
+      await runAutoFill();
     } catch (error) {
       console.error('Failed to auto sync project configuration', error);
       const message = parseApiErrorMessage(error, 'Erro na sincronizacao automatica.');
@@ -271,6 +371,7 @@ export default function RequisitionGrid() {
         event.preventDefault();
         void performAutoSync();
         void flushQuantityQueue();
+        void flushComputerAreaQueue();
       }
     };
 
@@ -289,25 +390,35 @@ export default function RequisitionGrid() {
       window.clearTimeout(quantitySyncTimerRef.current);
       quantitySyncTimerRef.current = null;
     }
+    if (computerAreaSyncTimerRef.current !== null) {
+      window.clearTimeout(computerAreaSyncTimerRef.current);
+      computerAreaSyncTimerRef.current = null;
+    }
     quantityQueueRef.current.clear();
     quantityPendingResyncRef.current = false;
     quantitySyncInFlightRef.current = false;
+    computerAreaQueueRef.current.clear();
+    computerAreaPendingResyncRef.current = false;
+    computerAreaSyncInFlightRef.current = false;
 
     setLoading(true);
     try {
-      const [itemsResponse, configsResponse] = await Promise.all([
+      const [itemsResponse, configsResponse, computerAreasResponse] = await Promise.all([
         api.get(`/requisitions/${reqId}/items`),
         api.get(`/requisitions/${reqId}/project-configs`),
+        api.get(`/requisitions/${reqId}/computer-areas`),
       ]);
 
       setRows(itemsResponse.data || []);
       const loadedConfigs = mapProjectConfigs(configsResponse.data || []);
+      setComputerAreas(computerAreasResponse.data || []);
       latestConfigsRef.current = loadedConfigs;
       setConfigs(loadedConfigs);
       configDirtyRef.current = false;
       pendingResyncRef.current = false;
       setAutoSyncError(null);
       setQuantitySyncError(null);
+      setComputerAreaSyncError(null);
       setDirtyRowIds([]);
       setRowSelectionModel({ type: 'include', ids: new Set() });
     } catch (error) {
@@ -391,6 +502,24 @@ export default function RequisitionGrid() {
       filteredTotalQuantity,
     };
   }, [rows, filteredRows]);
+
+  const computerAreasTotal = useMemo(
+    () =>
+      computerAreas.reduce((acc, row) => {
+        const value = Number(row.quantity);
+        if (!Number.isFinite(value)) return acc;
+        return acc + value;
+      }, 0),
+    [computerAreas],
+  );
+
+  const handleComputerAreaQuantityChange = (row: RequisitionComputerAreaRow, rawValue: string) => {
+    const quantity = normalizeComputerAreaQuantity(rawValue);
+    setComputerAreas((previous) =>
+      previous.map((current) => (current.id === row.id ? { ...current, quantity } : current)),
+    );
+    enqueueComputerAreaSave(row, quantity);
+  };
 
   const columns: GridColDef[] = [
     { field: 'localName', headerName: 'Local', width: 180 },
@@ -592,17 +721,19 @@ export default function RequisitionGrid() {
           <Typography
             variant="body2"
             sx={{
-              color: autoSyncError || quantitySyncError ? 'error.main' : 'text.secondary',
+              color: autoSyncError || quantitySyncError || computerAreaSyncError ? 'error.main' : 'text.secondary',
               minWidth: { xs: 0, md: 260 },
               textAlign: 'right',
             }}
           >
-            {savingConfigs || autoFilling || savingQuantities
+            {savingConfigs || autoFilling || savingQuantities || savingComputerAreas
               ? 'Sincronizando automaticamente...'
               : autoSyncError
                 ? autoSyncError
                 : quantitySyncError
                   ? quantitySyncError
+                  : computerAreaSyncError
+                    ? computerAreaSyncError
                 : lastAutoSyncAt
                   ? `Sincronizado as ${new Date(lastAutoSyncAt).toLocaleTimeString('pt-BR')}`
                   : 'Sincronizacao automatica ativa'}
@@ -625,10 +756,13 @@ export default function RequisitionGrid() {
           </Stack>
         </Paper>
 
-        {(autoSyncError || quantitySyncError) && (
+        {(autoSyncError || quantitySyncError || computerAreaSyncError) && (
           <Stack spacing={1.25} sx={{ mb: 2 }}>
             {autoSyncError && <Alert severity="warning">Falha ao sincronizar configuracoes: {autoSyncError}</Alert>}
             {quantitySyncError && <Alert severity="warning">Falha ao sincronizar quantidades: {quantitySyncError}</Alert>}
+            {computerAreaSyncError && (
+              <Alert severity="warning">Falha ao sincronizar tabela de computadores: {computerAreaSyncError}</Alert>
+            )}
           </Stack>
         )}
 
@@ -656,6 +790,74 @@ export default function RequisitionGrid() {
                 renderConfigInput(config)
               ))}
             </Box>
+          )}
+        </Paper>
+
+        <Paper sx={{ p: 2, mb: 2 }}>
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={1.25}
+            alignItems={{ xs: 'stretch', md: 'center' }}
+            sx={{ mb: 1.5 }}
+          >
+            <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
+              Computadores por Area
+            </Typography>
+            <Chip label={`Areas: ${computerAreas.length}`} variant="outlined" />
+            <Chip
+              label={`Linha ${computerAreas.length + 1} - Total: ${computerAreasTotal.toLocaleString('pt-BR')}`}
+              color="secondary"
+            />
+          </Stack>
+
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+            Para formulas do catalogo, use `{'{{Computadores - Total}}'}` e `{'{{Computadores - Nome da Area}}'}`.
+          </Typography>
+
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+              <CircularProgress size={24} />
+            </Box>
+          ) : computerAreas.length === 0 ? (
+            <Alert severity="info">
+              Nenhuma area configurada. Cadastre as areas em Configuracao - Catalogo de areas de computadores.
+            </Alert>
+          ) : (
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell width={90}>Linha</TableCell>
+                  <TableCell>Area</TableCell>
+                  <TableCell align="right" width={180}>
+                    Quantidade
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {computerAreas.map((row, index) => (
+                  <TableRow key={row.id}>
+                    <TableCell>{index + 1}</TableCell>
+                    <TableCell>{row.area?.name || '-'}</TableCell>
+                    <TableCell align="right">
+                      <TextField
+                        size="small"
+                        type="number"
+                        value={row.quantity}
+                        onChange={(event) => handleComputerAreaQuantityChange(row, event.target.value)}
+                        sx={{ width: 140 }}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+                <TableRow>
+                  <TableCell>{computerAreas.length + 1}</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>
+                    {computerAreasTotal.toLocaleString('pt-BR')}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           )}
         </Paper>
 

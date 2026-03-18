@@ -20,6 +20,7 @@ import {
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
+  Computer as ComputerIcon,
   Download as DownloadIcon,
   Group as GroupIcon,
   Settings as SettingsIcon,
@@ -47,6 +48,9 @@ type ImportResponse = {
       equipmentsCreated?: number;
       updated?: number;
       skipped?: number;
+      computerAreasCreated?: number;
+      computerAreasUpdated?: number;
+      computerAreasSkipped?: number;
     };
     projectHeaderFields?: {
       created?: number;
@@ -64,6 +68,9 @@ type ImportResponse = {
       itemsCreated?: number;
       itemsUpdated?: number;
       itemsSkipped?: number;
+      computerAreasCreated?: number;
+      computerAreasUpdated?: number;
+      computerAreasSkipped?: number;
     };
   };
 };
@@ -81,7 +88,7 @@ function buildImportResultMessage(data: ImportResponse): string {
 
   if (catalog) {
     lines.push(
-      `Catalogo: locais +${catalog.localsCreated ?? 0}, operacoes +${catalog.operationsCreated ?? 0}, equipamentos +${catalog.equipmentsCreated ?? 0}, atualizados ${catalog.updated ?? 0}, ignorados ${catalog.skipped ?? 0}.`,
+      `Catalogo: locais +${catalog.localsCreated ?? 0}, operacoes +${catalog.operationsCreated ?? 0}, equipamentos +${catalog.equipmentsCreated ?? 0}, areas de computadores +${catalog.computerAreasCreated ?? 0}, atualizados ${catalog.updated ?? 0} (areas ${catalog.computerAreasUpdated ?? 0}), ignorados ${catalog.skipped ?? 0} (areas ${catalog.computerAreasSkipped ?? 0}).`,
     );
   }
 
@@ -93,7 +100,7 @@ function buildImportResultMessage(data: ImportResponse): string {
 
   if (projects) {
     lines.push(
-      `Projetos/Versoes: projetos +${projects.projectsCreated ?? 0} (${projects.projectsUpdated ?? 0} atualizados), requisicoes +${projects.requisitionsCreated ?? 0} (${projects.requisitionsUpdated ?? 0} atualizadas), configs +${projects.projectConfigsCreated ?? 0} (${projects.projectConfigsUpdated ?? 0} atualizadas), itens +${projects.itemsCreated ?? 0} (${projects.itemsUpdated ?? 0} atualizados).`,
+      `Projetos/Versoes: projetos +${projects.projectsCreated ?? 0} (${projects.projectsUpdated ?? 0} atualizados), requisicoes +${projects.requisitionsCreated ?? 0} (${projects.requisitionsUpdated ?? 0} atualizadas), configs +${projects.projectConfigsCreated ?? 0} (${projects.projectConfigsUpdated ?? 0} atualizadas), itens +${projects.itemsCreated ?? 0} (${projects.itemsUpdated ?? 0} atualizados), areas de computadores +${projects.computerAreasCreated ?? 0} (${projects.computerAreasUpdated ?? 0} atualizadas).`,
     );
   }
 
@@ -249,6 +256,15 @@ export default function SystemSettings() {
               sx={{ alignSelf: 'flex-start' }}
             >
               Gerenciar usuarios
+            </Button>
+
+            <Button
+              variant="outlined"
+              startIcon={<ComputerIcon />}
+              onClick={() => navigate('/settings/computer-areas')}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              Catalogo de areas de computadores
             </Button>
 
             <Typography variant="caption" color="text.secondary">

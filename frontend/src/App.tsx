@@ -9,6 +9,7 @@ import ProjectHeaderConfig from './pages/ProjectHeaderConfig';
 import CatalogsConfig from './pages/CatalogsConfig';
 import SystemSettings from './pages/SystemSettings';
 import UsersSettings from './pages/UsersSettings';
+import ComputerAreasConfig from './pages/ComputerAreasConfig';
 import PrivateRoute from './components/PrivateRoute';
 
 const theme = createTheme({
@@ -198,6 +199,15 @@ function App() {
               element={
                 <PrivateRoute allowedRoles={['ADMIN']}>
                   <UsersSettings />
+                </PrivateRoute>
+              }
+            />
+
+            <Route
+              path="/settings/computer-areas"
+              element={
+                <PrivateRoute allowedRoles={['ADMIN']}>
+                  <ComputerAreasConfig />
                 </PrivateRoute>
               }
             />

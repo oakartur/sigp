@@ -616,6 +616,77 @@ export class SystemSettingsService {
     return { summary, equipmentIdBySourceId };
   }
 
+  private async importComputerAreasCatalog(
+    tx: TxClient,
+    rawAreas: unknown,
+  ): Promise<{ created: number; updated: number; skipped: number }> {
+    const summary = {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+    };
+
+    const importedAreas = this.asRecordArray(rawAreas);
+    const existingAreas = await tx.computerAreaCatalog.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+
+    const existingByNameKey = new Map<string, (typeof existingAreas)[number]>();
+    for (const area of existingAreas) {
+      existingByNameKey.set(this.normalizeKey(area.name), area);
+    }
+
+    let maxSortOrder = existingAreas.reduce((max, area) => Math.max(max, area.sortOrder), -1);
+
+    for (let index = 0; index < importedAreas.length; index++) {
+      const rawArea = importedAreas[index];
+      const name = this.asString(rawArea.name);
+      if (!name) {
+        summary.skipped++;
+        continue;
+      }
+
+      const nameKey = this.normalizeKey(name);
+      const sortOrder = this.asInteger(rawArea.sortOrder, maxSortOrder + 1 + index);
+      const isActive = this.asBoolean(rawArea.isActive, true);
+      maxSortOrder = Math.max(maxSortOrder, sortOrder);
+
+      const existing = existingByNameKey.get(nameKey);
+      if (!existing) {
+        const created = await tx.computerAreaCatalog.create({
+          data: {
+            name,
+            sortOrder,
+            isActive,
+          },
+        });
+        existingByNameKey.set(nameKey, created);
+        summary.created++;
+        continue;
+      }
+
+      const needsUpdate =
+        existing.name !== name || existing.sortOrder !== sortOrder || existing.isActive !== isActive;
+      if (!needsUpdate) {
+        summary.skipped++;
+        continue;
+      }
+
+      const updated = await tx.computerAreaCatalog.update({
+        where: { id: existing.id },
+        data: {
+          name,
+          sortOrder,
+          isActive,
+        },
+      });
+      existingByNameKey.set(nameKey, updated);
+      summary.updated++;
+    }
+
+    return summary;
+  }
+
   private async buildEquipmentLookup(tx: TxClient): Promise<Map<string, string>> {
     const equipments = await tx.equipmentCatalog.findMany({
       include: {
@@ -662,6 +733,9 @@ export class SystemSettingsService {
       itemsCreated: 0,
       itemsUpdated: 0,
       itemsSkipped: 0,
+      computerAreasCreated: 0,
+      computerAreasUpdated: 0,
+      computerAreasSkipped: 0,
     };
 
     const importedProjects = this.asRecordArray(rawProjects);
@@ -670,6 +744,13 @@ export class SystemSettingsService {
         requisitions: true,
       },
     })) as ProjectWithRequisitions[];
+    const catalogAreas = await tx.computerAreaCatalog.findMany();
+    const computerAreaIdBySourceId = new Map<string, string>();
+    const computerAreaIdByNameKey = new Map<string, string>();
+    for (const area of catalogAreas) {
+      computerAreaIdBySourceId.set(area.id, area.id);
+      computerAreaIdByNameKey.set(this.normalizeKey(area.name), area.id);
+    }
 
     for (const projectRaw of importedProjects) {
       const projectName = this.asString(projectRaw.name);
@@ -899,6 +980,58 @@ export class SystemSettingsService {
             summary.itemsSkipped++;
           }
         }
+
+        const existingComputerAreas = await tx.requisitionComputerArea.findMany({
+          where: { requisitionId: requisition.id },
+        });
+        const existingComputerAreaByAreaId = new Map(existingComputerAreas.map((row) => [row.areaId, row]));
+        const importedComputerAreas = this.asRecordArray(requisitionRaw.computerAreas);
+
+        for (const rowRaw of importedComputerAreas) {
+          const sourceAreaId = this.asString(rowRaw.areaId);
+          let areaId =
+            (sourceAreaId && computerAreaIdBySourceId.get(sourceAreaId)) ||
+            null;
+
+          if (!areaId) {
+            const nestedArea = this.asRecord(rowRaw.area);
+            const nestedAreaName = this.asString(nestedArea?.name);
+            if (nestedAreaName) {
+              areaId = computerAreaIdByNameKey.get(this.normalizeKey(nestedAreaName)) ?? null;
+            }
+          }
+
+          if (!areaId) {
+            summary.computerAreasSkipped++;
+            continue;
+          }
+
+          const quantity = this.asNumber(rowRaw.quantity, 0);
+          const existingRow = existingComputerAreaByAreaId.get(areaId);
+          if (!existingRow) {
+            const createdRow = await tx.requisitionComputerArea.create({
+              data: {
+                requisitionId: requisition.id,
+                areaId,
+                quantity,
+              },
+            });
+            existingComputerAreaByAreaId.set(areaId, createdRow);
+            summary.computerAreasCreated++;
+            continue;
+          }
+
+          if (existingRow.quantity !== quantity) {
+            const updatedRow = await tx.requisitionComputerArea.update({
+              where: { id: existingRow.id },
+              data: { quantity },
+            });
+            existingComputerAreaByAreaId.set(areaId, updatedRow);
+            summary.computerAreasUpdated++;
+          } else {
+            summary.computerAreasSkipped++;
+          }
+        }
       }
     }
 
@@ -939,6 +1072,10 @@ export class SystemSettingsService {
           },
         },
       });
+
+      payload.computerAreasCatalog = await this.prisma.computerAreaCatalog.findMany({
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      });
     }
 
     if (selection.includeProjectHeaderFields) {
@@ -959,6 +1096,12 @@ export class SystemSettingsService {
                 orderBy: [{ field: { sortOrder: 'asc' } }],
                 include: {
                   field: true,
+                },
+              },
+              computerAreas: {
+                orderBy: [{ area: { sortOrder: 'asc' } }, { area: { name: 'asc' } }],
+                include: {
+                  area: true,
                 },
               },
               items: {
@@ -1027,6 +1170,14 @@ export class SystemSettingsService {
             equipmentIdBySourceId: new Map<string, string>(),
           };
 
+      const computerAreasImportSummary = input.includeCatalog
+        ? await this.importComputerAreasCatalog(tx, payload.computerAreasCatalog)
+        : {
+            created: 0,
+            updated: 0,
+            skipped: 0,
+          };
+
       const equipmentLookup = await this.buildEquipmentLookup(tx);
       const projectsImport = input.includeProjectsAndActiveVersions
         ? await this.importProjectsAndRequisitions(
@@ -1061,7 +1212,12 @@ export class SystemSettingsService {
           includeProjectsAndActiveVersions: input.includeProjectsAndActiveVersions,
         },
         summary: {
-          catalog: catalogImport.summary,
+          catalog: {
+            ...catalogImport.summary,
+            computerAreasCreated: computerAreasImportSummary.created,
+            computerAreasUpdated: computerAreasImportSummary.updated,
+            computerAreasSkipped: computerAreasImportSummary.skipped,
+          },
           projectHeaderFields: fieldsImport.summary,
           projectsAndActiveVersions: projectsImport,
         },

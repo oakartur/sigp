@@ -49,6 +49,7 @@ model Requisition {
   status         ReqStatus                  @default(PENDING)
   isReadOnly     Boolean                    @default(false)
   items          RequisitionItem[]
+  computerAreas  RequisitionComputerArea[]
   projectConfigs RequisitionProjectConfig[]
   versionLock    Int                        @default(1)
   createdAt      DateTime                   @default(now())
@@ -90,6 +91,32 @@ model RequisitionItem {
   versionLock        Int               @default(1)
 
   @@index([requisitionId])
+}
+
+model ComputerAreaCatalog {
+  id           String                  @id @default(uuid())
+  name         String
+  sortOrder    Int                     @default(0)
+  isActive     Boolean                 @default(true)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  requisitions RequisitionComputerArea[]
+}
+
+model RequisitionComputerArea {
+  id           String              @id @default(uuid())
+  requisitionId String
+  requisition  Requisition         @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  areaId       String
+  area         ComputerAreaCatalog @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  quantity     Float               @default(0)
+  versionLock  Int                 @default(1)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@unique([requisitionId, areaId])
+  @@index([requisitionId])
+  @@index([areaId])
 }
 
 model ProjectHeaderField {
