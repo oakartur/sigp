@@ -60,6 +60,11 @@ enum ItemStatus {
   RECEIVED
 }
 
+enum QuantitySourceType {
+  PURCHASE
+  STOCK_AGP
+}
+
 model RequisitionItem {
   id                 String            @id @default(uuid())
   requisitionId      String
@@ -76,6 +81,8 @@ model RequisitionItem {
   variablesPayload   Json?
   calculatedValue    Float?
   overrideValue      Float?
+  quantitySourceType QuantitySourceType @default(PURCHASE)
+  quantitySourceNote String?
   status             ItemStatus        @default(PENDING)
   receivedAt         DateTime?
   receivedById       String?

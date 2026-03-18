@@ -41,6 +41,8 @@ export class ExcelProcessor extends WorkerHost {
       { header: 'Codigo', key: 'code', width: 18 },
       { header: 'Equipamento', key: 'equipment', width: 40 },
       { header: 'QuantidadeAprovada', key: 'quantity', width: 22 },
+      { header: 'OrigemQuantidade', key: 'quantitySource', width: 20 },
+      { header: 'ObservacaoOrigem', key: 'quantitySourceNote', width: 30 },
     ];
 
     for (const item of reqData.items) {
@@ -53,6 +55,8 @@ export class ExcelProcessor extends WorkerHost {
         code: item.equipmentCode ?? '',
         equipment: item.equipmentName,
         quantity: finalQtd,
+        quantitySource: item.quantitySourceType === 'STOCK_AGP' ? 'ESTOQUE_AGP' : 'COMPRA',
+        quantitySourceNote: item.quantitySourceNote ?? '',
       });
     }
 

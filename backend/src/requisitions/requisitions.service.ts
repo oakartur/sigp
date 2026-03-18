@@ -1,7 +1,14 @@
 import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FormulasService } from '../formulas/formulas.service';
-import { Prisma, ProjectHeaderFieldType, ReqStatus, RequisitionItem, Role } from '@prisma/client';
+import {
+  Prisma,
+  ProjectHeaderFieldType,
+  QuantitySourceType,
+  ReqStatus,
+  RequisitionItem,
+  Role,
+} from '@prisma/client';
 import * as math from 'mathjs';
 
 type ConfigWithField = Prisma.RequisitionProjectConfigGetPayload<{
@@ -12,6 +19,12 @@ type FormulaRuntimeContext = {
   variables?: Record<string, unknown>;
   quantityResolver?: (local: unknown, operation: unknown, equipment: unknown) => number;
   allowUnknownTokensAsLiteral?: boolean;
+};
+
+type ResolvedAutoQuantity = {
+  quantity: number;
+  sourceType: QuantitySourceType;
+  sourceNote: string | null;
 };
 
 @Injectable()
@@ -687,47 +700,71 @@ export class RequisitionsService {
     return String(result);
   }
 
-  private toNumericQuantity(result: unknown, context: string): number {
-    if (typeof result === 'number') {
-      if (!Number.isFinite(result)) {
-        throw new BadRequestException(`Formula em ${context} retornou numero invalido.`);
-      }
-      return result;
-    }
-
-    if (typeof result === 'boolean') {
-      return result ? 1 : 0;
-    }
-
-    const normalized = this.normalizeText(String(result ?? ''));
-    if (!normalized) return 0;
-
+  private resolveAutoQuantity(result: unknown, context: string): ResolvedAutoQuantity {
     const parseSafeNumber = (raw: string): number | null => {
       const parsedValue = Number(raw.replace(',', '.'));
       if (Number.isNaN(parsedValue) || !Number.isFinite(parsedValue)) return null;
       return parsedValue;
     };
 
+    const extractNumberFromText = (raw: string): number | null => {
+      const parenthesisMatch = raw.match(/\(([-+]?\d+(?:[.,]\d+)?)\)/);
+      if (parenthesisMatch?.[1]) {
+        const parsedParenthesis = parseSafeNumber(parenthesisMatch[1]);
+        if (parsedParenthesis !== null) return parsedParenthesis;
+      }
+
+      const firstNumberMatch = raw.match(/[-+]?\d+(?:[.,]\d+)?/);
+      if (firstNumberMatch?.[0]) {
+        const parsedFirstNumber = parseSafeNumber(firstNumberMatch[0]);
+        if (parsedFirstNumber !== null) return parsedFirstNumber;
+      }
+
+      return null;
+    };
+
+    if (typeof result === 'number') {
+      if (!Number.isFinite(result)) {
+        throw new BadRequestException(`Formula em ${context} retornou numero invalido.`);
+      }
+      return { quantity: result, sourceType: QuantitySourceType.PURCHASE, sourceNote: null };
+    }
+
+    if (typeof result === 'boolean') {
+      return {
+        quantity: result ? 1 : 0,
+        sourceType: QuantitySourceType.PURCHASE,
+        sourceNote: null,
+      };
+    }
+
+    const normalized = this.normalizeText(String(result ?? ''));
+    if (!normalized) {
+      return { quantity: 0, sourceType: QuantitySourceType.PURCHASE, sourceNote: null };
+    }
+
     const directNumber = parseSafeNumber(normalized);
     if (directNumber !== null) {
-      return directNumber;
+      return { quantity: directNumber, sourceType: QuantitySourceType.PURCHASE, sourceNote: null };
     }
 
-    // Permite "quantidade textual" quando houver numero embutido, ex.: "EST. AGP (06)" -> 6.
-    const parenthesisMatch = normalized.match(/\(([-+]?\d+(?:[.,]\d+)?)\)/);
-    if (parenthesisMatch?.[1]) {
-      const parsedParenthesis = parseSafeNumber(parenthesisMatch[1]);
-      if (parsedParenthesis !== null) return parsedParenthesis;
-    }
-
-    const firstNumberMatch = normalized.match(/[-+]?\d+(?:[.,]\d+)?/);
-    if (firstNumberMatch?.[0]) {
-      const parsedFirstNumber = parseSafeNumber(firstNumberMatch[0]);
-      if (parsedFirstNumber !== null) return parsedFirstNumber;
+    // Origem em estoque: aceita textos como "EST. AGP (06)".
+    if (/EST\.?\s*AGP/i.test(normalized)) {
+      const stockQuantity = extractNumberFromText(normalized);
+      if (stockQuantity === null) {
+        throw new BadRequestException(
+          `Formula em ${context} marcou EST. AGP, mas sem numero de quantidade (ex.: "EST. AGP (06)").`,
+        );
+      }
+      return {
+        quantity: stockQuantity,
+        sourceType: QuantitySourceType.STOCK_AGP,
+        sourceNote: normalized,
+      };
     }
 
     throw new BadRequestException(
-      `Formula em ${context} deve retornar numero ou texto contendo numero (ex.: "EST. AGP (06)").`,
+      `Formula em ${context} deve retornar numero, ou EST. AGP com quantidade (ex.: "EST. AGP (06)").`,
     );
   }
 
@@ -1087,6 +1124,8 @@ export class RequisitionsService {
             variablesPayload: item.variablesPayload ?? undefined,
             calculatedValue: item.calculatedValue,
             overrideValue: item.overrideValue,
+            quantitySourceType: item.quantitySourceType ?? QuantitySourceType.PURCHASE,
+            quantitySourceNote: item.quantitySourceNote ?? null,
             status: 'PENDING' as const,
           })),
         });
@@ -1262,6 +1301,10 @@ export class RequisitionsService {
     const typedItems = items as Array<any>;
     const quantityByItemId = new Map<string, number>();
     const initialQuantityByItemId = new Map<string, number>();
+    const sourceTypeByItemId = new Map<string, QuantitySourceType>();
+    const initialSourceTypeByItemId = new Map<string, QuantitySourceType>();
+    const sourceNoteByItemId = new Map<string, string | null>();
+    const initialSourceNoteByItemId = new Map<string, string | null>();
     const quantityByReference = new Map<string, number>();
 
     const registerItemQuantity = (item: any, quantity: number) => {
@@ -1278,6 +1321,12 @@ export class RequisitionsService {
       const initial = this.getEffectiveItemQuantity(item);
       quantityByItemId.set(item.id, initial);
       initialQuantityByItemId.set(item.id, initial);
+      const initialSourceType = item.quantitySourceType ?? QuantitySourceType.PURCHASE;
+      sourceTypeByItemId.set(item.id, initialSourceType);
+      initialSourceTypeByItemId.set(item.id, initialSourceType);
+      const initialSourceNote = this.normalizeText(item.quantitySourceNote) || null;
+      sourceNoteByItemId.set(item.id, initialSourceNote);
+      initialSourceNoteByItemId.set(item.id, initialSourceNote);
       registerItemQuantity(item, initial);
     }
 
@@ -1289,7 +1338,7 @@ export class RequisitionsService {
         const catalog = item.equipmentCatalog;
         if (!catalog) continue;
 
-        let autoQuantity: number | null = null;
+        let resolvedQuantity: ResolvedAutoQuantity | null = null;
 
         if (this.normalizeText(catalog.autoFormulaExpression)) {
           const currentLocal = this.normalizeCatalogKey(item.localName);
@@ -1328,23 +1377,37 @@ export class RequisitionsService {
               },
             },
           );
-          autoQuantity = this.toNumericQuantity(evaluated, `equipamento '${catalog.description}'`);
+          resolvedQuantity = this.resolveAutoQuantity(evaluated, `equipamento '${catalog.description}'`);
         } else if (catalog.autoConfigFieldId) {
           const configValueRaw = configByFieldId.get(catalog.autoConfigFieldId);
           const configValue = this.parseNumber(configValueRaw);
           if (configValue !== null) {
             const base = catalog.baseQuantity && catalog.baseQuantity !== 0 ? catalog.baseQuantity : 1;
             const multiplier = catalog.autoMultiplier ?? 1;
-            autoQuantity = configValue * base * multiplier;
+            resolvedQuantity = {
+              quantity: configValue * base * multiplier,
+              sourceType: QuantitySourceType.PURCHASE,
+              sourceNote: null,
+            };
           }
         }
 
-        if (autoQuantity === null) continue;
+        if (!resolvedQuantity) continue;
 
+        const autoQuantity = resolvedQuantity.quantity;
         const previous = quantityByItemId.get(item.id) ?? 0;
-        if (Math.abs(previous - autoQuantity) > 1e-9) {
+        const previousSourceType = sourceTypeByItemId.get(item.id) ?? QuantitySourceType.PURCHASE;
+        const previousSourceNote = sourceNoteByItemId.get(item.id) ?? null;
+
+        if (
+          Math.abs(previous - autoQuantity) > 1e-9 ||
+          previousSourceType !== resolvedQuantity.sourceType ||
+          previousSourceNote !== resolvedQuantity.sourceNote
+        ) {
           hasChanges = true;
           quantityByItemId.set(item.id, autoQuantity);
+          sourceTypeByItemId.set(item.id, resolvedQuantity.sourceType);
+          sourceNoteByItemId.set(item.id, resolvedQuantity.sourceNote);
           registerItemQuantity(item, autoQuantity);
         }
       }
@@ -1360,8 +1423,14 @@ export class RequisitionsService {
     for (const item of typedItems) {
       const nextQuantity = quantityByItemId.get(item.id);
       const initialQuantity = initialQuantityByItemId.get(item.id);
+      const nextSourceType = sourceTypeByItemId.get(item.id) ?? QuantitySourceType.PURCHASE;
+      const initialSourceType = initialSourceTypeByItemId.get(item.id) ?? QuantitySourceType.PURCHASE;
+      const nextSourceNote = sourceNoteByItemId.get(item.id) ?? null;
+      const initialSourceNote = initialSourceNoteByItemId.get(item.id) ?? null;
       if (nextQuantity === undefined || initialQuantity === undefined) continue;
-      if (Math.abs(nextQuantity - initialQuantity) <= 1e-9) continue;
+      const quantityUnchanged = Math.abs(nextQuantity - initialQuantity) <= 1e-9;
+      const sourceUnchanged = nextSourceType === initialSourceType && nextSourceNote === initialSourceNote;
+      if (quantityUnchanged && sourceUnchanged) continue;
 
       // Requisito: auto preenchimento deve sobrepor a quantidade da requisicao.
       await this.prisma.requisitionItem.update({
@@ -1369,6 +1438,8 @@ export class RequisitionsService {
         data: {
           calculatedValue: nextQuantity,
           manualQuantity: nextQuantity,
+          quantitySourceType: nextSourceType,
+          quantitySourceNote: nextSourceNote,
           versionLock: { increment: 1 },
         },
       });
@@ -1401,6 +1472,8 @@ export class RequisitionsService {
         formulaId: payload.formulaId,
         variablesPayload: payload.variables ? payload.variables : undefined,
         calculatedValue,
+        quantitySourceType: QuantitySourceType.PURCHASE,
+        quantitySourceNote: null,
       },
     });
   }
@@ -1422,6 +1495,8 @@ export class RequisitionsService {
       where: { id: itemId },
       data: {
         manualQuantity: manualQuantity === null ? null : Number(manualQuantity),
+        quantitySourceType: QuantitySourceType.PURCHASE,
+        quantitySourceNote: null,
         versionLock: { increment: 1 },
       },
     });
@@ -1437,6 +1512,8 @@ export class RequisitionsService {
       where: { id: itemId },
       data: {
         overrideValue,
+        quantitySourceType: QuantitySourceType.PURCHASE,
+        quantitySourceNote: null,
         versionLock: { increment: 1 },
       },
     });

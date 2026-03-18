@@ -46,6 +46,8 @@ interface RequisitionItemRow {
   manualQuantity?: number | null;
   calculatedValue?: number | null;
   overrideValue?: number | null;
+  quantitySourceType?: 'PURCHASE' | 'STOCK_AGP' | null;
+  quantitySourceNote?: string | null;
   status: 'PENDING' | 'RECEIVED';
   versionLock: number;
 }
@@ -410,6 +412,26 @@ export default function RequisitionGrid() {
       align: 'right',
       headerAlign: 'right',
       valueGetter: (_value, row) => getFinalQuantity(row as RequisitionItemRow),
+    },
+    {
+      field: 'quantitySourceType',
+      headerName: 'Origem',
+      width: 170,
+      renderCell: (params: GridRenderCellParams) => {
+        const row = params.row as RequisitionItemRow;
+        const isStock = params.value === 'STOCK_AGP';
+        const label = isStock ? 'Estoque AGP' : 'Compra';
+        const title = row.quantitySourceNote || label;
+        return (
+          <Chip
+            title={title}
+            label={label}
+            size="small"
+            color={isStock ? 'secondary' : 'default'}
+            variant={isStock ? 'filled' : 'outlined'}
+          />
+        );
+      },
     },
     {
       field: 'status',

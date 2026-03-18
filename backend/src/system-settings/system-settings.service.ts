@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ItemStatus, Prisma, ProjectHeaderFieldType, ReqStatus } from '@prisma/client';
+import { ItemStatus, Prisma, ProjectHeaderFieldType, QuantitySourceType, ReqStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 type ExportSelection = {
@@ -115,6 +115,12 @@ export class SystemSettingsService {
     const normalized = this.normalizeText(value).toUpperCase();
     if (normalized === ItemStatus.RECEIVED) return ItemStatus.RECEIVED;
     return ItemStatus.PENDING;
+  }
+
+  private parseQuantitySourceType(value: unknown): QuantitySourceType {
+    const normalized = this.normalizeText(value).toUpperCase();
+    if (normalized === QuantitySourceType.STOCK_AGP) return QuantitySourceType.STOCK_AGP;
+    return QuantitySourceType.PURCHASE;
   }
 
   private parseOptions(value: unknown): string[] {
@@ -817,6 +823,8 @@ export class SystemSettingsService {
           const manualQuantity = this.parseNullableNumber(itemRaw.manualQuantity);
           const calculatedValue = this.parseNullableNumber(itemRaw.calculatedValue);
           const overrideValue = this.parseNullableNumber(itemRaw.overrideValue);
+          const quantitySourceType = this.parseQuantitySourceType(itemRaw.quantitySourceType);
+          const quantitySourceNote = this.asOptionalString(itemRaw.quantitySourceNote);
           const observation = this.asOptionalString(itemRaw.observation);
 
           const compositeKey = this.buildEquipmentKey(localName, operationName, equipmentCode, equipmentName);
@@ -836,6 +844,8 @@ export class SystemSettingsService {
                 manualQuantity,
                 calculatedValue,
                 overrideValue,
+                quantitySourceType,
+                quantitySourceNote,
                 status: itemStatus,
                 observation,
               },
@@ -857,6 +867,8 @@ export class SystemSettingsService {
             existingItem.manualQuantity !== manualQuantity ||
             existingItem.calculatedValue !== calculatedValue ||
             existingItem.overrideValue !== overrideValue ||
+            existingItem.quantitySourceType !== quantitySourceType ||
+            existingItem.quantitySourceNote !== quantitySourceNote ||
             existingItem.status !== itemStatus ||
             existingItem.observation !== observation;
 
@@ -872,6 +884,8 @@ export class SystemSettingsService {
                 manualQuantity,
                 calculatedValue,
                 overrideValue,
+                quantitySourceType,
+                quantitySourceNote,
                 status: itemStatus,
                 observation,
               },
