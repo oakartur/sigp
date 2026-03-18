@@ -249,28 +249,45 @@ export class CatalogService {
     const SymbolNodeCtor = (math as any).SymbolNode;
     if (!ConditionalNodeCtor || !FunctionNodeCtor || !SymbolNodeCtor) return parsed;
 
-    return parsed.transform((node: any) => {
-      const fnName = node?.fn?.name;
-      const isIfLike =
-        node?.isFunctionNode &&
-        node?.fn?.isSymbolNode &&
-        typeof fnName === 'string' &&
-        ['if', 'se'].includes(fnName.toLowerCase()) &&
-        Array.isArray(node?.args) &&
-        node.args.length === 3;
+    let withConcat: any = parsed;
+    for (let pass = 0; pass < 8; pass++) {
+      let changed = false;
+      withConcat = withConcat.transform((node: any) => {
+        const isConcatOperator =
+          node?.isOperatorNode && node?.op === '&' && Array.isArray(node?.args) && node.args.length === 2;
+        if (isConcatOperator) {
+          changed = true;
+          return new FunctionNodeCtor(new SymbolNodeCtor('concat'), [node.args[0], node.args[1]]);
+        }
+        return node;
+      });
+      if (!changed) break;
+    }
 
-      if (isIfLike) {
-        return new ConditionalNodeCtor(node.args[0], node.args[1], node.args[2]);
-      }
+    let withLazyIf: any = withConcat;
+    for (let pass = 0; pass < 8; pass++) {
+      let changed = false;
+      withLazyIf = withLazyIf.transform((node: any) => {
+        const fnName = node?.fn?.name;
+        const isIfLike =
+          node?.isFunctionNode &&
+          node?.fn?.isSymbolNode &&
+          typeof fnName === 'string' &&
+          ['if', 'se'].includes(fnName.toLowerCase()) &&
+          Array.isArray(node?.args) &&
+          node.args.length === 3;
 
-      const isConcatOperator =
-        node?.isOperatorNode && node?.op === '&' && Array.isArray(node?.args) && node.args.length === 2;
-      if (isConcatOperator) {
-        return new FunctionNodeCtor(new SymbolNodeCtor('concat'), [node.args[0], node.args[1]]);
-      }
+        if (isIfLike) {
+          changed = true;
+          return new ConditionalNodeCtor(node.args[0], node.args[1], node.args[2]);
+        }
 
-      return node;
-    });
+        return node;
+      });
+      if (!changed) break;
+    }
+
+    return withLazyIf;
   }
 
   private validateFormulaExpression(formula: string) {
