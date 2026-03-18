@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { AxiosError } from 'axios';
 import {
   AppBar,
   Box,
@@ -60,6 +61,13 @@ export default function ComputerAreasConfig() {
     isActive: true,
   });
 
+  const parseApiErrorMessage = (error: unknown, fallback: string) => {
+    const apiError = error as AxiosError<{ message?: string | string[] }>;
+    const backendMessage = apiError.response?.data?.message;
+    if (Array.isArray(backendMessage)) return backendMessage.join(' ');
+    return backendMessage || fallback;
+  };
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -67,7 +75,7 @@ export default function ComputerAreasConfig() {
       setAreas(response.data || []);
     } catch (error) {
       console.error('Failed to fetch computer areas catalog', error);
-      alert('Erro ao carregar catalogo de areas de computadores.');
+      alert(parseApiErrorMessage(error, 'Erro ao carregar catalogo de areas de computadores.'));
     } finally {
       setLoading(false);
     }
@@ -137,7 +145,7 @@ export default function ComputerAreasConfig() {
       await fetchData();
     } catch (error) {
       console.error('Failed to save computer area', error);
-      alert('Erro ao salvar area de computadores.');
+      alert(parseApiErrorMessage(error, 'Erro ao salvar area de computadores.'));
     } finally {
       setSaving(false);
     }
@@ -154,7 +162,7 @@ export default function ComputerAreasConfig() {
       await fetchData();
     } catch (error) {
       console.error('Failed to remove computer area', error);
-      alert('Erro ao desativar area de computadores.');
+      alert(parseApiErrorMessage(error, 'Erro ao desativar area de computadores.'));
     }
   };
 
@@ -162,7 +170,7 @@ export default function ComputerAreasConfig() {
     <Box sx={{ minHeight: '100vh' }}>
       <AppBar position="sticky" elevation={0}>
         <Toolbar>
-          <IconButton edge="start" color="primary" onClick={() => navigate('/settings/system')} sx={{ mr: 1 }}>
+          <IconButton edge="start" color="primary" onClick={() => navigate('/settings/catalogs')} sx={{ mr: 1 }}>
             <ArrowBackIcon />
           </IconButton>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>

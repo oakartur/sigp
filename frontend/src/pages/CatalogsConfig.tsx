@@ -30,6 +30,7 @@ import {
 import {
   ArrowBack as ArrowBackIcon,
   Add as AddIcon,
+  Computer as ComputerIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
@@ -441,6 +442,14 @@ export default function CatalogsConfig() {
             />
             <Button variant="outlined" color="secondary" onClick={handleImportClick} disabled={importing}>
               {importing ? 'Importando...' : 'Importar CSV/Excel'}
+            </Button>
+            <Button
+              variant="outlined"
+              color="primary"
+              startIcon={<ComputerIcon />}
+              onClick={() => navigate('/settings/catalogs/computer-areas')}
+            >
+              Areas de computadores
             </Button>
             <Button variant="outlined" color="error" onClick={handleClearCatalog} disabled={clearingCatalog || loading}>
               {clearingCatalog ? 'Limpando...' : 'Limpar catalogo'}

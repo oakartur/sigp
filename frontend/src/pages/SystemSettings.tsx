@@ -20,7 +20,6 @@ import {
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
-  Computer as ComputerIcon,
   Download as DownloadIcon,
   Group as GroupIcon,
   Settings as SettingsIcon,
@@ -256,15 +255,6 @@ export default function SystemSettings() {
               sx={{ alignSelf: 'flex-start' }}
             >
               Gerenciar usuarios
-            </Button>
-
-            <Button
-              variant="outlined"
-              startIcon={<ComputerIcon />}
-              onClick={() => navigate('/settings/computer-areas')}
-              sx={{ alignSelf: 'flex-start' }}
-            >
-              Catalogo de areas de computadores
             </Button>
 
             <Typography variant="caption" color="text.secondary">

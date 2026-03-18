@@ -204,13 +204,15 @@ function App() {
             />
 
             <Route
-              path="/settings/computer-areas"
+              path="/settings/catalogs/computer-areas"
               element={
                 <PrivateRoute allowedRoles={['ADMIN']}>
                   <ComputerAreasConfig />
                 </PrivateRoute>
               }
             />
+
+            <Route path="/settings/computer-areas" element={<Navigate to="/settings/catalogs/computer-areas" replace />} />
 
             <Route
               path="/settings/header-fields"
