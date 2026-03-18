@@ -8,6 +8,7 @@ import {
   Box,
   Button,
   Chip,
+  Collapse,
   CircularProgress,
   Container,
   Divider,
@@ -24,7 +25,11 @@ import {
   Toolbar,
   Typography,
 } from '@mui/material';
-import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
+import {
+  ArrowBack as ArrowBackIcon,
+  ExpandLess as ExpandLessIcon,
+  ExpandMore as ExpandMoreIcon,
+} from '@mui/icons-material';
 import { api } from '../context/AuthContext';
 import type { AxiosError } from 'axios';
 
@@ -92,6 +97,8 @@ export default function RequisitionGrid() {
   });
   const [bulkQuantity, setBulkQuantity] = useState('');
   const [bulkApplying, setBulkApplying] = useState(false);
+  const [projectConfigsCollapsed, setProjectConfigsCollapsed] = useState(false);
+  const [computerAreasCollapsed, setComputerAreasCollapsed] = useState(false);
 
   const latestConfigsRef = useRef<ProjectConfig[]>([]);
   const autoSyncTimerRef = useRef<number | null>(null);
@@ -767,30 +774,41 @@ export default function RequisitionGrid() {
         )}
 
         <Paper sx={{ p: 2, mb: 2 }}>
-          <Typography variant="subtitle1" sx={{ mb: 1.5 }}>
-            Configuracoes de Projeto
-          </Typography>
-          {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-              <CircularProgress size={24} />
-            </Box>
-          ) : (
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: {
-                  xs: '1fr',
-                  sm: 'repeat(2, minmax(0, 1fr))',
-                  lg: 'repeat(4, minmax(0, 1fr))',
-                },
-                gap: 1.5,
-              }}
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: projectConfigsCollapsed ? 0 : 1.5 }}>
+            <Typography variant="subtitle1">Configuracoes de Projeto</Typography>
+            <IconButton
+              size="small"
+              color="primary"
+              onClick={() => setProjectConfigsCollapsed((previous) => !previous)}
+              title={projectConfigsCollapsed ? 'Expandir' : 'Minimizar'}
             >
-              {configs.map((config) => (
-                renderConfigInput(config)
-              ))}
-            </Box>
-          )}
+              {projectConfigsCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
+            </IconButton>
+          </Stack>
+
+          <Collapse in={!projectConfigsCollapsed}>
+            {loading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : (
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    sm: 'repeat(2, minmax(0, 1fr))',
+                    lg: 'repeat(4, minmax(0, 1fr))',
+                  },
+                  gap: 1.5,
+                }}
+              >
+                {configs.map((config) => (
+                  renderConfigInput(config)
+                ))}
+              </Box>
+            )}
+          </Collapse>
         </Paper>
 
         <Paper sx={{ p: 2, mb: 2 }}>
@@ -798,67 +816,79 @@ export default function RequisitionGrid() {
             direction={{ xs: 'column', md: 'row' }}
             spacing={1.25}
             alignItems={{ xs: 'stretch', md: 'center' }}
-            sx={{ mb: 1.5 }}
+            sx={{ mb: computerAreasCollapsed ? 0 : 1.5 }}
           >
-            <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
-              Computadores por Area
-            </Typography>
-            <Chip label={`Areas: ${computerAreas.length}`} variant="outlined" />
-            <Chip
-              label={`Linha ${computerAreas.length + 1} - Total: ${computerAreasTotal.toLocaleString('pt-BR')}`}
-              color="secondary"
-            />
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
+              <Typography variant="subtitle1">Computadores por Area</Typography>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <IconButton
+                  size="small"
+                  color="primary"
+                  onClick={() => setComputerAreasCollapsed((previous) => !previous)}
+                  title={computerAreasCollapsed ? 'Expandir' : 'Minimizar'}
+                >
+                  {computerAreasCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
+                </IconButton>
+                <Chip label={`Areas: ${computerAreas.length}`} variant="outlined" />
+                <Chip
+                  label={`Linha ${computerAreas.length + 1} - Total: ${computerAreasTotal.toLocaleString('pt-BR')}`}
+                  color="secondary"
+                />
+              </Stack>
+            </Stack>
           </Stack>
 
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-            Para formulas do catalogo, use `{'{{Computadores - Total}}'}` e `{'{{Computadores - Nome da Area}}'}`.
-          </Typography>
+          <Collapse in={!computerAreasCollapsed}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+              Para formulas do catalogo, use `{'{{Computadores - Total}}'}` e `{'{{Computadores - Nome da Area}}'}`.
+            </Typography>
 
-          {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-              <CircularProgress size={24} />
-            </Box>
-          ) : computerAreas.length === 0 ? (
-            <Alert severity="info">
-              Nenhuma area configurada. Cadastre as areas em Configuracao - Catalogo de areas de computadores.
-            </Alert>
-          ) : (
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell width={90}>Linha</TableCell>
-                  <TableCell>Area</TableCell>
-                  <TableCell align="right" width={180}>
-                    Quantidade
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {computerAreas.map((row, index) => (
-                  <TableRow key={row.id}>
-                    <TableCell>{index + 1}</TableCell>
-                    <TableCell>{row.area?.name || '-'}</TableCell>
-                    <TableCell align="right">
-                      <TextField
-                        size="small"
-                        type="number"
-                        value={row.quantity}
-                        onChange={(event) => handleComputerAreaQuantityChange(row, event.target.value)}
-                        sx={{ width: 140 }}
-                      />
+            {loading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : computerAreas.length === 0 ? (
+              <Alert severity="info">
+                Nenhuma area configurada. Cadastre as areas em Configuracao - Catalogo de areas de computadores.
+              </Alert>
+            ) : (
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell width={90}>Linha</TableCell>
+                    <TableCell>Area</TableCell>
+                    <TableCell align="right" width={180}>
+                      Quantidade
                     </TableCell>
                   </TableRow>
-                ))}
-                <TableRow>
-                  <TableCell>{computerAreas.length + 1}</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>
-                    {computerAreasTotal.toLocaleString('pt-BR')}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          )}
+                </TableHead>
+                <TableBody>
+                  {computerAreas.map((row, index) => (
+                    <TableRow key={row.id}>
+                      <TableCell>{index + 1}</TableCell>
+                      <TableCell>{row.area?.name || '-'}</TableCell>
+                      <TableCell align="right">
+                        <TextField
+                          size="small"
+                          type="number"
+                          value={row.quantity}
+                          onChange={(event) => handleComputerAreaQuantityChange(row, event.target.value)}
+                          sx={{ width: 140 }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow>
+                    <TableCell>{computerAreas.length + 1}</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>
+                      {computerAreasTotal.toLocaleString('pt-BR')}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            )}
+          </Collapse>
         </Paper>
 
         <Paper sx={{ p: 2, mb: 2 }}>

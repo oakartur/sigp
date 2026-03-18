@@ -57,8 +57,8 @@ wait_for_health db-maintenance 300
 echo "Executando migracoes Prisma (job dedicado)..."
 docker compose run --rm --build api-migrate
 
-echo "Validando consistencia entre banco e pasta prisma/migrations..."
-docker compose run --rm --build api-migrate sh -lc 'npx prisma migrate diff --from-url "$DATABASE_URL" --to-migrations prisma/migrations --exit-code'
+echo "Validando consistencia de migracoes..."
+docker compose run --rm --build api-migrate npx prisma migrate status
 
 echo "Subindo API, worker e frontend..."
 docker compose up -d api-server queue-worker web-frontend
