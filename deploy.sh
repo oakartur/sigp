@@ -44,8 +44,8 @@ wait_for_health() {
 echo "Parando stack atual..."
 docker compose down --remove-orphans || true
 
-echo "Buildando imagens de backend, frontend e manutencao..."
-docker compose build api-server queue-worker web-frontend db-maintenance
+echo "Buildando imagens de backend, migracao, frontend e manutencao..."
+docker compose build api-server api-migrate queue-worker web-frontend db-maintenance
 
 echo "Subindo banco, redis e manutencao..."
 docker compose up -d postgres-db redis-queue db-maintenance
@@ -55,7 +55,10 @@ wait_for_health redis-queue 120
 wait_for_health db-maintenance 300
 
 echo "Executando migracoes Prisma (job dedicado)..."
-docker compose run --rm api-migrate
+docker compose run --rm --build api-migrate
+
+echo "Validando consistencia entre banco e pasta prisma/migrations..."
+docker compose run --rm --build api-migrate sh -lc 'npx prisma migrate diff --from-url "$DATABASE_URL" --to-migrations prisma/migrations --exit-code'
 
 echo "Subindo API, worker e frontend..."
 docker compose up -d api-server queue-worker web-frontend
