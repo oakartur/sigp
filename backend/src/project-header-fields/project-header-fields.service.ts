@@ -151,7 +151,8 @@ export class ProjectHeaderFieldsService {
       .replace(/\bint\s*\(/gi, 'int(');
     const withoutExcelPrefix = withFunctionAliases.replace(/^\s*=\s*/, '');
     const withDecimalDot = withoutExcelPrefix.replace(/(\d)\s*,\s*(\d)/g, '$1.$2');
-    return withDecimalDot.replace(/(?<![<>=!])=(?!=)/g, '==');
+    const withNotEqual = withDecimalDot.replace(/<>/g, '!=');
+    return withNotEqual.replace(/(?<![<>=!])=(?!=)/g, '==');
   }
 
   private validateFormulaSyntax(formula: string) {

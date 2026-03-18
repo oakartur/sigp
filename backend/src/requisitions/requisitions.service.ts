@@ -241,7 +241,8 @@ export class RequisitionsService {
       .replace(/\bint\s*\(/gi, 'int(');
     const withoutExcelPrefix = withFunctionAliases.replace(/^\s*=\s*/, '');
     const withDecimalDot = this.normalizeDecimalCommas(withoutExcelPrefix);
-    const withEq = withDecimalDot.replace(/(?<![<>=!])=(?!=)/g, '==');
+    const withNotEqual = withDecimalDot.replace(/<>/g, '!=');
+    const withEq = withNotEqual.replace(/(?<![<>=!])=(?!=)/g, '==');
     const withEqFunctions = this.rewriteEqualityOperators(withEq);
     return this.unwrapMalformedIfWrapper(withEqFunctions);
   }
@@ -259,7 +260,9 @@ export class RequisitionsService {
   private parseAstWithLazyIf(expression: string) {
     const parsed = math.parse(expression);
     const ConditionalNodeCtor = (math as any).ConditionalNode;
-    if (!ConditionalNodeCtor) return parsed;
+    const FunctionNodeCtor = (math as any).FunctionNode;
+    const SymbolNodeCtor = (math as any).SymbolNode;
+    if (!ConditionalNodeCtor || !FunctionNodeCtor || !SymbolNodeCtor) return parsed;
 
     return parsed.transform((node: any) => {
       const fnName = node?.fn?.name;
@@ -271,8 +274,17 @@ export class RequisitionsService {
         Array.isArray(node?.args) &&
         node.args.length === 3;
 
-      if (!isIfLike) return node;
-      return new ConditionalNodeCtor(node.args[0], node.args[1], node.args[2]);
+      if (isIfLike) {
+        return new ConditionalNodeCtor(node.args[0], node.args[1], node.args[2]);
+      }
+
+      const isConcatOperator =
+        node?.isOperatorNode && node?.op === '&' && Array.isArray(node?.args) && node.args.length === 2;
+      if (isConcatOperator) {
+        return new FunctionNodeCtor(new SymbolNodeCtor('concat'), [node.args[0], node.args[1]]);
+      }
+
+      return node;
     });
   }
 
@@ -515,6 +527,10 @@ export class RequisitionsService {
       },
       eq: (left: unknown, right: unknown) => this.isEqual(left, right),
       neq: (left: unknown, right: unknown) => !this.isEqual(left, right),
+      concat: (...args: unknown[]) => args.map((value) => this.normalizeText(String(value ?? ''))).join(''),
+      CONCAT: (...args: unknown[]) => args.map((value) => this.normalizeText(String(value ?? ''))).join(''),
+      concatenar: (...args: unknown[]) => args.map((value) => this.normalizeText(String(value ?? ''))).join(''),
+      CONCATENAR: (...args: unknown[]) => args.map((value) => this.normalizeText(String(value ?? ''))).join(''),
       qtd: (local: unknown, operation: unknown, equipment: unknown) =>
         runtime?.quantityResolver ? runtime.quantityResolver(local, operation, equipment) : 0,
       QTD: (local: unknown, operation: unknown, equipment: unknown) =>

@@ -226,7 +226,8 @@ export class CatalogService {
       .replace(/\bint\s*\(/gi, 'int(');
     const withoutExcelPrefix = withFunctionAliases.replace(/^\s*=\s*/, '');
     const withDecimalDot = this.normalizeDecimalCommas(withoutExcelPrefix);
-    const withEq = withDecimalDot.replace(/(?<![<>=!])=(?!=)/g, '==');
+    const withNotEqual = withDecimalDot.replace(/<>/g, '!=');
+    const withEq = withNotEqual.replace(/(?<![<>=!])=(?!=)/g, '==');
     const withEqFunctions = this.rewriteEqualityOperators(withEq);
     return this.unwrapMalformedIfWrapper(withEqFunctions);
   }
@@ -244,7 +245,9 @@ export class CatalogService {
   private parseAstWithLazyIf(expression: string) {
     const parsed = math.parse(expression);
     const ConditionalNodeCtor = (math as any).ConditionalNode;
-    if (!ConditionalNodeCtor) return parsed;
+    const FunctionNodeCtor = (math as any).FunctionNode;
+    const SymbolNodeCtor = (math as any).SymbolNode;
+    if (!ConditionalNodeCtor || !FunctionNodeCtor || !SymbolNodeCtor) return parsed;
 
     return parsed.transform((node: any) => {
       const fnName = node?.fn?.name;
@@ -256,8 +259,17 @@ export class CatalogService {
         Array.isArray(node?.args) &&
         node.args.length === 3;
 
-      if (!isIfLike) return node;
-      return new ConditionalNodeCtor(node.args[0], node.args[1], node.args[2]);
+      if (isIfLike) {
+        return new ConditionalNodeCtor(node.args[0], node.args[1], node.args[2]);
+      }
+
+      const isConcatOperator =
+        node?.isOperatorNode && node?.op === '&' && Array.isArray(node?.args) && node.args.length === 2;
+      if (isConcatOperator) {
+        return new FunctionNodeCtor(new SymbolNodeCtor('concat'), [node.args[0], node.args[1]]);
+      }
+
+      return node;
     });
   }
 
@@ -963,6 +975,9 @@ export class CatalogService {
     if (/\bsoma\s*\(/i.test(original) || /\bsum\s*\(/i.test(normalized)) commands.add('soma()');
     if (/\barred\s*\(/i.test(original) || /\barred\s*\(/i.test(normalized)) commands.add('arred()');
     if (/\binteiro\s*\(/i.test(original) || /\bint\s*\(/i.test(normalized)) commands.add('inteiro()');
+    if (/[&]/.test(original) || /\bconcat(enar)?\s*\(/i.test(original) || /\bconcat(enar)?\s*\(/i.test(normalized)) {
+      commands.add('concatenar()');
+    }
     if (/\bqtd\s*\(/i.test(original) || /\bquantidade\s*\(/i.test(original) || /\bqtd\s*\(/i.test(normalized)) {
       commands.add('qtd()');
     }
@@ -1026,6 +1041,10 @@ export class CatalogService {
       },
       eq: (left: unknown, right: unknown) => this.isEqual(left, right),
       neq: (left: unknown, right: unknown) => !this.isEqual(left, right),
+      concat: (...args: unknown[]) => args.map((value) => this.normalizeNullable(String(value ?? ''))).join(''),
+      CONCAT: (...args: unknown[]) => args.map((value) => this.normalizeNullable(String(value ?? ''))).join(''),
+      concatenar: (...args: unknown[]) => args.map((value) => this.normalizeNullable(String(value ?? ''))).join(''),
+      CONCATENAR: (...args: unknown[]) => args.map((value) => this.normalizeNullable(String(value ?? ''))).join(''),
       qtd: (_local: unknown, _operation: unknown, _equipment: unknown) => 0,
       QTD: (_local: unknown, _operation: unknown, _equipment: unknown) => 0,
       quantidade: (_local: unknown, _operation: unknown, _equipment: unknown) => 0,
@@ -1153,6 +1172,8 @@ export class CatalogService {
         'inteiro',
         'int',
         'arred',
+        'concat',
+        'concatenar',
         'qtd',
         'quantidade',
         'true',
