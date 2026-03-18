@@ -1047,7 +1047,7 @@ export class RequisitionsService {
     const defaultVersion = await this.buildDefaultVersion(projectId);
     const normalizedVersion = this.normalizeVersion(version, defaultVersion);
 
-    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const requisition = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const requisition = await tx.requisition.create({
         data: {
           projectId,
@@ -1060,6 +1060,11 @@ export class RequisitionsService {
       await this.syncCatalogItemsForRequisition(tx, requisition.id);
       return requisition;
     });
+
+    // Evita desincronismo inicial: aplica auto preenchimento com valores default
+    // das Configuracoes de Projeto (ex.: Obra = "Nova") logo na criacao.
+    await this.autoFillItemsFromProjectConfigs(requisition.id);
+    return requisition;
   }
 
   async completeRequisition(id: string, currentLock: number) {
@@ -1094,7 +1099,7 @@ export class RequisitionsService {
     const defaultVersion = await this.buildDefaultVersion(req.projectId);
     const normalizedVersion = this.normalizeVersion(version, defaultVersion);
 
-    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const newReq = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const newReq = await tx.requisition.create({
         data: {
           projectId: req.projectId,
@@ -1135,6 +1140,10 @@ export class RequisitionsService {
       await this.syncProjectConfigs(tx, newReq.id, req.id);
       return newReq;
     });
+
+    // Garante formulas de auto preenchimento aplicadas na versao nova.
+    await this.autoFillItemsFromProjectConfigs(newReq.id);
+    return newReq;
   }
 
   async updateVersion(id: string, version: string) {
