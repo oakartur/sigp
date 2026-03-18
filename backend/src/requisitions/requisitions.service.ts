@@ -1238,12 +1238,8 @@ export class RequisitionsService {
     const registerItemQuantity = (item: any, quantity: number) => {
       const local = this.normalizeCatalogKey(item.localName);
       const operation = this.normalizeCatalogKey(item.operationName);
-      const equipmentName = this.normalizeCatalogKey(item.equipmentName);
       const equipmentCode = this.normalizeCatalogKey(item.equipmentCode);
 
-      if (local && operation && equipmentName) {
-        quantityByReference.set(this.buildCatalogLookupKey(local, operation, equipmentName), quantity);
-      }
       if (local && operation && equipmentCode) {
         quantityByReference.set(this.buildCatalogLookupKey(local, operation, equipmentCode), quantity);
       }
