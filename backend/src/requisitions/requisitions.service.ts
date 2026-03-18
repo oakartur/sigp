@@ -11,6 +11,7 @@ type ConfigWithField = Prisma.RequisitionProjectConfigGetPayload<{
 type FormulaRuntimeContext = {
   variables?: Record<string, unknown>;
   quantityResolver?: (local: unknown, operation: unknown, equipment: unknown) => number;
+  allowUnknownTokensAsLiteral?: boolean;
 };
 
 @Injectable()
@@ -622,7 +623,14 @@ export class RequisitionsService {
       (_match, tokenDouble, tokenSingle) => {
         const token = tokenDouble ?? tokenSingle;
         const varName = `__token_${tokenIndex++}`;
-        scope[varName] = resolveToken(token) as any;
+        try {
+          scope[varName] = resolveToken(token) as any;
+        } catch (error) {
+          if (!runtime?.allowUnknownTokensAsLiteral) {
+            throw error;
+          }
+          scope[varName] = this.normalizeText(token) as any;
+        }
         return varName;
       },
     );
@@ -1279,6 +1287,7 @@ export class RequisitionsService {
                 Codigo: item.equipmentCode ?? '',
                 Código: item.equipmentCode ?? '',
               },
+              allowUnknownTokensAsLiteral: true,
               quantityResolver: (local: unknown, operation: unknown, equipment: unknown) => {
                 const targetLocal = this.normalizeCatalogKey(
                   this.normalizeText(String(local ?? '')) || currentLocal,

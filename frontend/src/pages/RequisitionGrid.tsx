@@ -144,6 +144,7 @@ export default function RequisitionGrid() {
 
     const queueBatch = Array.from(quantityQueueRef.current.entries());
     quantityQueueRef.current.clear();
+    let hasSuccessfulQuantityUpdate = false;
 
     for (const [rowId, payload] of queueBatch) {
       try {
@@ -154,10 +155,25 @@ export default function RequisitionGrid() {
         const updatedRow = response.data as RequisitionItemRow;
         setRows((previous) => previous.map((row) => (row.id === rowId ? updatedRow : row)));
         markRowDirty(rowId, false);
+        hasSuccessfulQuantityUpdate = true;
       } catch (error) {
         const message = parseApiErrorMessage(error, 'Erro ao salvar quantidade.');
         setQuantitySyncError(message);
         markRowDirty(rowId, true);
+      }
+    }
+
+    if (hasSuccessfulQuantityUpdate) {
+      setAutoFilling(true);
+      try {
+        const autoFillResponse = await api.post(`/requisitions/${reqId}/items/auto-fill`);
+        setRows(autoFillResponse.data || []);
+        setAutoSyncError(null);
+      } catch (error) {
+        const message = parseApiErrorMessage(error, 'Erro ao recalcular quantidades automaticas.');
+        setAutoSyncError(message);
+      } finally {
+        setAutoFilling(false);
       }
     }
 
