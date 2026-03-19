@@ -801,17 +801,26 @@ export class RequisitionsService {
 
     // Origem em estoque: aceita textos como
     // "EST. AGP (06)", "LOC. H2L (02)" e "COMD.EBT (01)".
-    const isStockLabel = /^(EST\.?\s*AGP|LOC\.?\s*H2L|COMD\.?\s*EBT)/i.test(normalized);
-    if (isStockLabel) {
+    const stockPrefixMatch = normalized.match(/^(EST\.?\s*AGP|LOC\.?\s*H2L|COMD\.?\s*EBT)/i);
+    if (stockPrefixMatch) {
       const stockQuantity = extractNumberFromText(normalized);
       if (stockQuantity === null) {
         throw new BadRequestException(
           `Formula em ${context} marcou origem de estoque, mas sem numero de quantidade (ex.: "EST. AGP (06)", "LOC. H2L (02)" ou "COMD.EBT (01)").`,
         );
       }
+
+      const sourcePrefix = stockPrefixMatch[1].toUpperCase().replace(/\s+/g, '');
+      let sourceType: QuantitySourceType = QuantitySourceType.STOCK_AGP;
+      if (sourcePrefix.startsWith('LOC')) {
+        sourceType = QuantitySourceType.STOCK_H2L;
+      } else if (sourcePrefix.startsWith('COMD')) {
+        sourceType = QuantitySourceType.STOCK_EBT;
+      }
+
       return {
         quantity: stockQuantity,
-        sourceType: QuantitySourceType.STOCK_AGP,
+        sourceType,
         sourceNote: normalized,
       };
     }

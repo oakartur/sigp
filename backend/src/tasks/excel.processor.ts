@@ -62,7 +62,14 @@ export class ExcelProcessor extends WorkerHost {
         code: item.equipmentCode ?? '',
         equipment: item.equipmentName,
         quantity: finalQtd,
-        quantitySource: item.quantitySourceType === 'STOCK_AGP' ? 'ESTOQUE_AGP' : 'COMPRA',
+        quantitySource:
+          item.quantitySourceType === 'STOCK_AGP'
+            ? 'ESTOQUE_AGP'
+            : item.quantitySourceType === 'STOCK_H2L'
+              ? 'LOC_H2L'
+              : item.quantitySourceType === 'STOCK_EBT'
+                ? 'COMD_EBT'
+                : 'COMPRA',
         quantitySourceNote: item.quantitySourceNote ?? '',
       });
     }

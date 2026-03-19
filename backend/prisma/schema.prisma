@@ -65,6 +65,8 @@ enum ItemStatus {
 enum QuantitySourceType {
   PURCHASE
   STOCK_AGP
+  STOCK_H2L
+  STOCK_EBT
 }
 
 model RequisitionItem {

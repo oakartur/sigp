@@ -120,6 +120,8 @@ export class SystemSettingsService {
   private parseQuantitySourceType(value: unknown): QuantitySourceType {
     const normalized = this.normalizeText(value).toUpperCase();
     if (normalized === QuantitySourceType.STOCK_AGP) return QuantitySourceType.STOCK_AGP;
+    if (normalized === QuantitySourceType.STOCK_H2L) return QuantitySourceType.STOCK_H2L;
+    if (normalized === QuantitySourceType.STOCK_EBT) return QuantitySourceType.STOCK_EBT;
     return QuantitySourceType.PURCHASE;
   }
 

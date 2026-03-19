@@ -56,7 +56,7 @@ interface RequisitionItemRow {
   manualQuantity?: number | null;
   calculatedValue?: number | null;
   overrideValue?: number | null;
-  quantitySourceType?: 'PURCHASE' | 'STOCK_AGP' | null;
+  quantitySourceType?: 'PURCHASE' | 'STOCK_AGP' | 'STOCK_H2L' | 'STOCK_EBT' | null;
   quantitySourceNote?: string | null;
   status: 'PENDING' | 'RECEIVED';
   versionLock: number;
@@ -681,8 +681,16 @@ export default function RequisitionGrid() {
       width: 170,
       renderCell: (params: GridRenderCellParams) => {
         const row = params.row as RequisitionItemRow;
-        const isStock = params.value === 'STOCK_AGP';
-        const label = isStock ? 'Estoque AGP' : 'Compra';
+        const sourceType = String(params.value || 'PURCHASE');
+        const isStock = sourceType !== 'PURCHASE';
+        const label =
+          sourceType === 'STOCK_AGP'
+            ? 'Estoque AGP'
+            : sourceType === 'STOCK_H2L'
+              ? 'Loc. H2L'
+              : sourceType === 'STOCK_EBT'
+                ? 'Comd. EBT'
+                : 'Compra';
         const title = row.quantitySourceNote || label;
         return (
           <Chip
