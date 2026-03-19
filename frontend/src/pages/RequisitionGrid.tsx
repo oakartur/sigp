@@ -112,9 +112,9 @@ export default function RequisitionGrid() {
   });
   const [bulkQuantity, setBulkQuantity] = useState('');
   const [bulkApplying, setBulkApplying] = useState(false);
-  const [projectConfigsCollapsed, setProjectConfigsCollapsed] = useState(false);
-  const [computerAreasCollapsed, setComputerAreasCollapsed] = useState(false);
-  const [backofficeScaleAreasCollapsed, setBackofficeScaleAreasCollapsed] = useState(false);
+  const [projectConfigsCollapsed, setProjectConfigsCollapsed] = useState(true);
+  const [computerAreasCollapsed, setComputerAreasCollapsed] = useState(true);
+  const [backofficeScaleAreasCollapsed, setBackofficeScaleAreasCollapsed] = useState(true);
 
   const latestConfigsRef = useRef<ProjectConfig[]>([]);
   const autoSyncTimerRef = useRef<number | null>(null);
@@ -900,17 +900,31 @@ export default function RequisitionGrid() {
         )}
 
         <Paper sx={{ p: 2, mb: 2 }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: projectConfigsCollapsed ? 0 : 1.5 }}>
+          <Box
+            role="button"
+            tabIndex={0}
+            onClick={() => setProjectConfigsCollapsed((previous) => !previous)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                setProjectConfigsCollapsed((previous) => !previous);
+              }
+            }}
+            sx={{
+              mb: projectConfigsCollapsed ? 0 : 1.5,
+              px: 0.5,
+              py: 0.5,
+              borderRadius: 1,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              '&:hover': { bgcolor: 'action.hover' },
+            }}
+          >
             <Typography variant="subtitle1">Configuracoes de Projeto</Typography>
-            <IconButton
-              size="small"
-              color="primary"
-              onClick={() => setProjectConfigsCollapsed((previous) => !previous)}
-              title={projectConfigsCollapsed ? 'Expandir' : 'Minimizar'}
-            >
-              {projectConfigsCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
-            </IconButton>
-          </Stack>
+            {projectConfigsCollapsed ? <ExpandMoreIcon color="primary" /> : <ExpandLessIcon color="primary" />}
+          </Box>
 
           <Collapse in={!projectConfigsCollapsed}>
             {loading ? (
@@ -938,31 +952,31 @@ export default function RequisitionGrid() {
         </Paper>
 
         <Paper sx={{ p: 2, mb: 2 }}>
-          <Stack
-            direction={{ xs: 'column', md: 'row' }}
-            spacing={1.25}
-            alignItems={{ xs: 'stretch', md: 'center' }}
-            sx={{ mb: backofficeScaleAreasCollapsed ? 0 : 1.5 }}
+          <Box
+            role="button"
+            tabIndex={0}
+            onClick={() => setBackofficeScaleAreasCollapsed((previous) => !previous)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                setBackofficeScaleAreasCollapsed((previous) => !previous);
+              }
+            }}
+            sx={{
+              mb: backofficeScaleAreasCollapsed ? 0 : 1.5,
+              px: 0.5,
+              py: 0.5,
+              borderRadius: 1,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              '&:hover': { bgcolor: 'action.hover' },
+            }}
           >
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
-              <Typography variant="subtitle1">Balancas Retaguarda por Area</Typography>
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <IconButton
-                  size="small"
-                  color="primary"
-                  onClick={() => setBackofficeScaleAreasCollapsed((previous) => !previous)}
-                  title={backofficeScaleAreasCollapsed ? 'Expandir' : 'Minimizar'}
-                >
-                  {backofficeScaleAreasCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
-                </IconButton>
-                <Chip label={`Areas: ${backofficeScaleAreas.length}`} variant="outlined" />
-                <Chip
-                  label={`Linha ${backofficeScaleAreas.length + 1} - Total: ${backofficeScaleAreasTotal.toLocaleString('pt-BR')}`}
-                  color="secondary"
-                />
-              </Stack>
-            </Stack>
-          </Stack>
+            <Typography variant="subtitle1">Balancas Retaguarda por Area</Typography>
+            {backofficeScaleAreasCollapsed ? <ExpandMoreIcon color="primary" /> : <ExpandLessIcon color="primary" />}
+          </Box>
 
           <Collapse in={!backofficeScaleAreasCollapsed}>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
@@ -1018,31 +1032,31 @@ export default function RequisitionGrid() {
         </Paper>
 
         <Paper sx={{ p: 2, mb: 2 }}>
-          <Stack
-            direction={{ xs: 'column', md: 'row' }}
-            spacing={1.25}
-            alignItems={{ xs: 'stretch', md: 'center' }}
-            sx={{ mb: computerAreasCollapsed ? 0 : 1.5 }}
+          <Box
+            role="button"
+            tabIndex={0}
+            onClick={() => setComputerAreasCollapsed((previous) => !previous)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                setComputerAreasCollapsed((previous) => !previous);
+              }
+            }}
+            sx={{
+              mb: computerAreasCollapsed ? 0 : 1.5,
+              px: 0.5,
+              py: 0.5,
+              borderRadius: 1,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              '&:hover': { bgcolor: 'action.hover' },
+            }}
           >
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
-              <Typography variant="subtitle1">Computadores por Area</Typography>
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <IconButton
-                  size="small"
-                  color="primary"
-                  onClick={() => setComputerAreasCollapsed((previous) => !previous)}
-                  title={computerAreasCollapsed ? 'Expandir' : 'Minimizar'}
-                >
-                  {computerAreasCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
-                </IconButton>
-                <Chip label={`Areas: ${computerAreas.length}`} variant="outlined" />
-                <Chip
-                  label={`Linha ${computerAreas.length + 1} - Total: ${computerAreasTotal.toLocaleString('pt-BR')}`}
-                  color="secondary"
-                />
-              </Stack>
-            </Stack>
-          </Stack>
+            <Typography variant="subtitle1">Computadores por Area</Typography>
+            {computerAreasCollapsed ? <ExpandMoreIcon color="primary" /> : <ExpandLessIcon color="primary" />}
+          </Box>
 
           <Collapse in={!computerAreasCollapsed}>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>

@@ -10,6 +10,7 @@ import {
   Role,
 } from '@prisma/client';
 import * as math from 'mathjs';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 
 type ConfigWithField = Prisma.RequisitionProjectConfigGetPayload<{
   include: { field: true };
@@ -33,6 +34,16 @@ export class RequisitionsService {
     private prisma: PrismaService,
     private formulasService: FormulasService,
   ) {}
+
+  private isMissingBackofficeScaleTable(error: unknown): boolean {
+    if (!(error instanceof PrismaClientKnownRequestError)) return false;
+    if (error.code !== 'P2021') return false;
+
+    const tableName = this.normalizeText(String((error.meta as any)?.table ?? ''));
+    return (
+      tableName.includes('BackofficeScaleAreaCatalog') || tableName.includes('RequisitionBackofficeScaleArea')
+    );
+  }
 
   private normalizeVersion(version: string | undefined, fallback: string): string {
     const normalized = version?.trim();
@@ -1138,53 +1149,62 @@ export class RequisitionsService {
   }
 
   private async syncBackofficeScaleAreasForRequisition(tx: Prisma.TransactionClient, requisitionId: string) {
-    const requisition = await tx.requisition.findUnique({
-      where: { id: requisitionId },
-      select: { id: true, status: true },
-    });
-    if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
-
-    const areas = await tx.backofficeScaleAreaCatalog.findMany({
-      where: { isActive: true },
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    });
-
-    const existing = await tx.requisitionBackofficeScaleArea.findMany({
-      where: { requisitionId },
-      select: { id: true, areaId: true },
-    });
-
-    const activeAreaIds = new Set(areas.map((area) => area.id));
-    const existingAreaIds = new Set(existing.map((item) => item.areaId));
-
-    const missing = areas.filter((area) => !existingAreaIds.has(area.id));
-    if (missing.length > 0) {
-      await tx.requisitionBackofficeScaleArea.createMany({
-        data: missing.map((area) => ({
-          requisitionId,
-          areaId: area.id,
-          quantity: 0,
-        })),
+    try {
+      const requisition = await tx.requisition.findUnique({
+        where: { id: requisitionId },
+        select: { id: true, status: true },
       });
-    }
+      if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
 
-    if (requisition.status === ReqStatus.PENDING) {
-      const staleIds = existing.filter((item) => !activeAreaIds.has(item.areaId)).map((item) => item.id);
-      if (staleIds.length > 0) {
-        await tx.requisitionBackofficeScaleArea.deleteMany({
-          where: { id: { in: staleIds } },
+      const areas = await tx.backofficeScaleAreaCatalog.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      });
+
+      const existing = await tx.requisitionBackofficeScaleArea.findMany({
+        where: { requisitionId },
+        select: { id: true, areaId: true },
+      });
+
+      const activeAreaIds = new Set(areas.map((area) => area.id));
+      const existingAreaIds = new Set(existing.map((item) => item.areaId));
+
+      const missing = areas.filter((area) => !existingAreaIds.has(area.id));
+      if (missing.length > 0) {
+        await tx.requisitionBackofficeScaleArea.createMany({
+          data: missing.map((area) => ({
+            requisitionId,
+            areaId: area.id,
+            quantity: 0,
+          })),
         });
       }
-    }
 
-    return tx.requisitionBackofficeScaleArea.findMany({
-      where: {
-        requisitionId,
-        area: { isActive: true },
-      },
-      include: { area: true },
-      orderBy: [{ area: { sortOrder: 'asc' } }, { area: { name: 'asc' } }],
-    });
+      if (requisition.status === ReqStatus.PENDING) {
+        const staleIds = existing.filter((item) => !activeAreaIds.has(item.areaId)).map((item) => item.id);
+        if (staleIds.length > 0) {
+          await tx.requisitionBackofficeScaleArea.deleteMany({
+            where: { id: { in: staleIds } },
+          });
+        }
+      }
+
+      return tx.requisitionBackofficeScaleArea.findMany({
+        where: {
+          requisitionId,
+          area: { isActive: true },
+        },
+        include: { area: true },
+        orderBy: [{ area: { sortOrder: 'asc' } }, { area: { name: 'asc' } }],
+      });
+    } catch (error) {
+      // Compatibilidade: se a migration de balancas retaguarda ainda nao foi aplicada,
+      // nao bloqueia criacao/edicao de requisicao.
+      if (this.isMissingBackofficeScaleTable(error)) {
+        return [];
+      }
+      throw error;
+    }
   }
 
   async createInitialRequisition(projectId: string, version?: string) {
@@ -1484,32 +1504,41 @@ export class RequisitionsService {
   }
 
   async updateBackofficeScaleAreaQuantity(rowId: string, quantity: number, currentLock: number) {
-    const row = await this.prisma.requisitionBackofficeScaleArea.findUnique({
-      where: { id: rowId },
-      include: {
-        requisition: true,
-        area: true,
-      },
-    });
-    if (!row) throw new NotFoundException('Area de balancas retaguarda nao encontrada.');
-    if (row.versionLock !== currentLock) {
-      throw new ConflictException('Conflito de edicao na area. Atualize a tela.');
-    }
-    if (row.requisition.isReadOnly) {
-      throw new BadRequestException('Requisicao em modo somente leitura.');
-    }
-    if (!Number.isFinite(quantity)) {
-      throw new BadRequestException('Quantidade invalida para area de balancas retaguarda.');
-    }
+    try {
+      const row = await this.prisma.requisitionBackofficeScaleArea.findUnique({
+        where: { id: rowId },
+        include: {
+          requisition: true,
+          area: true,
+        },
+      });
+      if (!row) throw new NotFoundException('Area de balancas retaguarda nao encontrada.');
+      if (row.versionLock !== currentLock) {
+        throw new ConflictException('Conflito de edicao na area. Atualize a tela.');
+      }
+      if (row.requisition.isReadOnly) {
+        throw new BadRequestException('Requisicao em modo somente leitura.');
+      }
+      if (!Number.isFinite(quantity)) {
+        throw new BadRequestException('Quantidade invalida para area de balancas retaguarda.');
+      }
 
-    return this.prisma.requisitionBackofficeScaleArea.update({
-      where: { id: rowId },
-      data: {
-        quantity,
-        versionLock: { increment: 1 },
-      },
-      include: { area: true },
-    });
+      return this.prisma.requisitionBackofficeScaleArea.update({
+        where: { id: rowId },
+        data: {
+          quantity,
+          versionLock: { increment: 1 },
+        },
+        include: { area: true },
+      });
+    } catch (error) {
+      if (this.isMissingBackofficeScaleTable(error)) {
+        throw new BadRequestException(
+          'Estrutura de banco desatualizada para Balancas Retaguarda. Execute as migracoes (deploy) e tente novamente.',
+        );
+      }
+      throw error;
+    }
   }
 
   async autoFillItemsFromProjectConfigs(reqId: string) {
