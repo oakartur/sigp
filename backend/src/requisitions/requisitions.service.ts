@@ -83,9 +83,80 @@ export class RequisitionsService {
   }
 
   private normalizeDecimalCommas(expression: string): string {
-    // Converte apenas numero com virgula decimal (ex.: 1,1 -> 1.1),
-    // sem tocar em separadores de argumentos (ex.: arred(1.1,0)).
-    return expression.replace(/(?<![\d.])(\d+)\s*,\s*(\d+)(?![\d.])/g, '$1.$2');
+    // Padronizacao:
+    // - separador de argumentos = virgula
+    // - virgula decimal e convertida para ponto apenas em contexto numerico.
+    // Evita converter casos de argumentos como if(condicao,1,0).
+    return expression.replace(/(\d+)\s*,\s*(\d+)/g, (match, left, right, offset, fullText) => {
+      const start = Number(offset);
+      const end = start + String(match).length;
+
+      if (this.isInsideQuotedLiteral(fullText, start)) return String(match);
+      if (!this.shouldConvertDecimalComma(fullText, start, end)) return String(match);
+
+      return `${left}.${right}`;
+    });
+  }
+
+  private isInsideQuotedLiteral(text: string, index: number): boolean {
+    let quote: "'" | '"' | null = null;
+    for (let i = 0; i < index; i++) {
+      const char = text[i];
+      const prev = i > 0 ? text[i - 1] : '';
+      if (quote) {
+        if (char === quote && prev !== '\\') {
+          quote = null;
+        }
+        continue;
+      }
+
+      if ((char === '"' || char === "'") && prev !== '\\') {
+        quote = char;
+      }
+    }
+    return quote !== null;
+  }
+
+  private previousNonWhitespaceIndex(text: string, from: number): number {
+    for (let i = from; i >= 0; i--) {
+      if (!/\s/.test(text[i])) return i;
+    }
+    return -1;
+  }
+
+  private nextNonWhitespaceIndex(text: string, from: number): number {
+    for (let i = from; i < text.length; i++) {
+      if (!/\s/.test(text[i])) return i;
+    }
+    return text.length;
+  }
+
+  private shouldConvertDecimalComma(text: string, start: number, end: number): boolean {
+    const prevIndex = this.previousNonWhitespaceIndex(text, start - 1);
+    const nextIndex = this.nextNonWhitespaceIndex(text, end);
+
+    const prevChar = prevIndex >= 0 ? text[prevIndex] : '';
+    const nextChar = nextIndex < text.length ? text[nextIndex] : '';
+    const operatorRegex = /[+\-*/%^<>=!]/;
+
+    const nextLooksNumericContext =
+      nextIndex >= text.length || nextChar === ')' || operatorRegex.test(nextChar);
+    if (!nextLooksNumericContext) return false;
+
+    if (prevIndex < 0) return true;
+    if (operatorRegex.test(prevChar)) return true;
+
+    if (prevChar === '(') {
+      const beforeParenIndex = this.previousNonWhitespaceIndex(text, prevIndex - 1);
+      if (beforeParenIndex < 0) return true;
+      const beforeParenChar = text[beforeParenIndex];
+      if (beforeParenChar === '(' || beforeParenChar === ',' || operatorRegex.test(beforeParenChar)) {
+        return true;
+      }
+      return false;
+    }
+
+    return false;
   }
 
   private splitTopLevelArgs(argsText: string): string[] {

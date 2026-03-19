@@ -69,6 +69,100 @@ export class ProjectHeaderFieldsService {
       .toLowerCase();
   }
 
+  private sanitizeFormulaInput(expression: string): string {
+    return expression
+      .replace(/\u00A0/g, ' ')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/[â€œâ€]/g, '"')
+      .replace(/[â€˜â€™]/g, "'")
+      .replace(/[âˆ’â€“â€”]/g, '-')
+      .replace(/[Ã—]/g, '*')
+      .replace(/[Ã·]/g, '/')
+      .replace(/[ï½›]/g, '{')
+      .replace(/[ï½]/g, '}')
+      .replace(/[ï¼ˆ]/g, '(')
+      .replace(/[ï¼‰]/g, ')')
+      .replace(/[ï¼Œ]/g, ',')
+      .replace(/[ï¼›]/g, ';');
+  }
+
+  private normalizeDecimalCommas(expression: string): string {
+    // Padronizacao:
+    // - separador de argumentos = virgula
+    // - virgula decimal e convertida para ponto apenas em contexto numerico.
+    // Evita converter casos de argumentos como if(condicao,1,0).
+    return expression.replace(/(\d+)\s*,\s*(\d+)/g, (match, left, right, offset, fullText) => {
+      const start = Number(offset);
+      const end = start + String(match).length;
+
+      if (this.isInsideQuotedLiteral(fullText, start)) return String(match);
+      if (!this.shouldConvertDecimalComma(fullText, start, end)) return String(match);
+
+      return `${left}.${right}`;
+    });
+  }
+
+  private isInsideQuotedLiteral(text: string, index: number): boolean {
+    let quote: "'" | '"' | null = null;
+    for (let i = 0; i < index; i++) {
+      const char = text[i];
+      const prev = i > 0 ? text[i - 1] : '';
+      if (quote) {
+        if (char === quote && prev !== '\\') {
+          quote = null;
+        }
+        continue;
+      }
+
+      if ((char === '"' || char === "'") && prev !== '\\') {
+        quote = char;
+      }
+    }
+    return quote !== null;
+  }
+
+  private previousNonWhitespaceIndex(text: string, from: number): number {
+    for (let i = from; i >= 0; i--) {
+      if (!/\s/.test(text[i])) return i;
+    }
+    return -1;
+  }
+
+  private nextNonWhitespaceIndex(text: string, from: number): number {
+    for (let i = from; i < text.length; i++) {
+      if (!/\s/.test(text[i])) return i;
+    }
+    return text.length;
+  }
+
+  private shouldConvertDecimalComma(text: string, start: number, end: number): boolean {
+    const prevIndex = this.previousNonWhitespaceIndex(text, start - 1);
+    const nextIndex = this.nextNonWhitespaceIndex(text, end);
+
+    const prevChar = prevIndex >= 0 ? text[prevIndex] : '';
+    const nextChar = nextIndex < text.length ? text[nextIndex] : '';
+    const operatorRegex = /[+\-*/%^<>=!]/;
+
+    const nextLooksNumericContext =
+      nextIndex >= text.length || nextChar === ')' || operatorRegex.test(nextChar);
+    if (!nextLooksNumericContext) return false;
+
+    if (prevIndex < 0) return true;
+    if (operatorRegex.test(prevChar)) return true;
+
+    if (prevChar === '(') {
+      const beforeParenIndex = this.previousNonWhitespaceIndex(text, prevIndex - 1);
+      if (beforeParenIndex < 0) return true;
+      const beforeParenChar = text[beforeParenIndex];
+      if (beforeParenChar === '(' || beforeParenChar === ',' || operatorRegex.test(beforeParenChar)) {
+        return true;
+      }
+      return false;
+    }
+
+    return false;
+  }
+
   private getFormulaTokens(formula: string): string[] {
     const unique = new Set<string>();
     const regex = /\{\{\s*([^}]+)\s*\}\}|\{\s*([^{}]+)\s*\}/g;
@@ -135,7 +229,7 @@ export class ProjectHeaderFieldsService {
   }
 
   private normalizeFormulaExpression(formula?: string | null): string | null {
-    const value = this.normalizeString(formula);
+    const value = this.normalizeString(this.sanitizeFormulaInput(formula ?? ''));
     if (!value) return null;
 
     const withIf = value
@@ -150,7 +244,7 @@ export class ProjectHeaderFieldsService {
       .replace(/\binteiro\s*\(/gi, 'inteiro(')
       .replace(/\bint\s*\(/gi, 'int(');
     const withoutExcelPrefix = withFunctionAliases.replace(/^\s*=\s*/, '');
-    const withDecimalDot = withoutExcelPrefix.replace(/(\d)\s*,\s*(\d)/g, '$1.$2');
+    const withDecimalDot = this.normalizeDecimalCommas(withoutExcelPrefix);
     const withNotEqual = withDecimalDot.replace(/<>/g, '!=');
     return withNotEqual.replace(/(?<![<>=!])=(?!=)/g, '==');
   }
