@@ -799,12 +799,14 @@ export class RequisitionsService {
       return { quantity: directNumber, sourceType: QuantitySourceType.PURCHASE, sourceNote: null };
     }
 
-    // Origem em estoque: aceita textos como "EST. AGP (06)".
-    if (/EST\.?\s*AGP/i.test(normalized)) {
+    // Origem em estoque: aceita textos como
+    // "EST. AGP (06)", "LOC. H2L (02)" e "COMD.EBT (01)".
+    const isStockLabel = /^(EST\.?\s*AGP|LOC\.?\s*H2L|COMD\.?\s*EBT)/i.test(normalized);
+    if (isStockLabel) {
       const stockQuantity = extractNumberFromText(normalized);
       if (stockQuantity === null) {
         throw new BadRequestException(
-          `Formula em ${context} marcou EST. AGP, mas sem numero de quantidade (ex.: "EST. AGP (06)").`,
+          `Formula em ${context} marcou origem de estoque, mas sem numero de quantidade (ex.: "EST. AGP (06)", "LOC. H2L (02)" ou "COMD.EBT (01)").`,
         );
       }
       return {
@@ -815,7 +817,7 @@ export class RequisitionsService {
     }
 
     throw new BadRequestException(
-      `Formula em ${context} deve retornar numero, ou EST. AGP com quantidade (ex.: "EST. AGP (06)").`,
+      `Formula em ${context} deve retornar numero, ou origem de estoque com quantidade (ex.: "EST. AGP (06)", "LOC. H2L (02)" ou "COMD.EBT (01)").`,
     );
   }
 
