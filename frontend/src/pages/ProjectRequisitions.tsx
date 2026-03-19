@@ -1,5 +1,6 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import type { AxiosError } from 'axios';
 import {
   AppBar,
   Box,
@@ -66,6 +67,13 @@ export default function ProjectRequisitions() {
 
   const isAdminOrQuantifier = user?.role === 'ADMIN' || user?.role === 'QUANTIFIER';
 
+  const parseApiErrorMessage = (error: unknown, fallback: string) => {
+    const apiError = error as AxiosError<{ message?: string | string[] }>;
+    const backendMessage = apiError.response?.data?.message;
+    if (Array.isArray(backendMessage)) return backendMessage.join(' ');
+    return backendMessage || fallback;
+  };
+
   useEffect(() => {
     fetchData();
   }, [projectId]);
@@ -110,7 +118,7 @@ export default function ProjectRequisitions() {
       await fetchData();
     } catch (error) {
       console.error('Failed to create requisition', error);
-      alert('Erro ao criar requisicao.');
+      alert(parseApiErrorMessage(error, 'Erro ao criar requisicao.'));
     } finally {
       setActionLoading(false);
     }
@@ -134,7 +142,7 @@ export default function ProjectRequisitions() {
       await fetchData();
     } catch (error) {
       console.error('Failed to create snapshot', error);
-      alert('Erro ao clonar versao.');
+      alert(parseApiErrorMessage(error, 'Erro ao clonar versao.'));
     } finally {
       setActionLoading(false);
     }
@@ -158,7 +166,7 @@ export default function ProjectRequisitions() {
       await fetchData();
     } catch (error) {
       console.error('Failed to update version', error);
-      alert('Erro ao atualizar versao.');
+      alert(parseApiErrorMessage(error, 'Erro ao atualizar versao.'));
     } finally {
       setActionLoading(false);
     }
@@ -178,7 +186,7 @@ export default function ProjectRequisitions() {
       await fetchData();
     } catch (error) {
       console.error('Failed to delete requisition', error);
-      alert('Erro ao excluir requisicao.');
+      alert(parseApiErrorMessage(error, 'Erro ao excluir requisicao.'));
     } finally {
       setActionLoading(false);
     }

@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FormulasService } from '../formulas/formulas.service';
 import {
@@ -30,6 +30,8 @@ type ResolvedAutoQuantity = {
 
 @Injectable()
 export class RequisitionsService {
+  private readonly logger = new Logger(RequisitionsService.name);
+
   constructor(
     private prisma: PrismaService,
     private formulasService: FormulasService,
@@ -1232,7 +1234,16 @@ export class RequisitionsService {
 
     // Evita desincronismo inicial: aplica auto preenchimento com valores default
     // das Configuracoes de Projeto (ex.: Obra = "Nova") logo na criacao.
-    await this.autoFillItemsFromProjectConfigs(requisition.id);
+    // Nao deve impedir a criacao da requisicao quando houver formula inconsistente.
+    try {
+      await this.autoFillItemsFromProjectConfigs(requisition.id);
+    } catch (error) {
+      this.logger.warn(
+        `Auto-fill inicial falhou na requisicao ${requisition.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
     return requisition;
   }
 
@@ -1313,7 +1324,16 @@ export class RequisitionsService {
     });
 
     // Garante formulas de auto preenchimento aplicadas na versao nova.
-    await this.autoFillItemsFromProjectConfigs(newReq.id);
+    // Nao deve impedir a criacao da versao quando houver formula inconsistente.
+    try {
+      await this.autoFillItemsFromProjectConfigs(newReq.id);
+    } catch (error) {
+      this.logger.warn(
+        `Auto-fill inicial falhou no snapshot ${newReq.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
     return newReq;
   }
 
