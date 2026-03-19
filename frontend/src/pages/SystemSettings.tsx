@@ -50,6 +50,9 @@ type ImportResponse = {
       computerAreasCreated?: number;
       computerAreasUpdated?: number;
       computerAreasSkipped?: number;
+      backofficeScaleAreasCreated?: number;
+      backofficeScaleAreasUpdated?: number;
+      backofficeScaleAreasSkipped?: number;
     };
     projectHeaderFields?: {
       created?: number;
@@ -70,6 +73,9 @@ type ImportResponse = {
       computerAreasCreated?: number;
       computerAreasUpdated?: number;
       computerAreasSkipped?: number;
+      backofficeScaleAreasCreated?: number;
+      backofficeScaleAreasUpdated?: number;
+      backofficeScaleAreasSkipped?: number;
     };
   };
 };
@@ -87,7 +93,7 @@ function buildImportResultMessage(data: ImportResponse): string {
 
   if (catalog) {
     lines.push(
-      `Catalogo: locais +${catalog.localsCreated ?? 0}, operacoes +${catalog.operationsCreated ?? 0}, equipamentos +${catalog.equipmentsCreated ?? 0}, areas de computadores +${catalog.computerAreasCreated ?? 0}, atualizados ${catalog.updated ?? 0} (areas ${catalog.computerAreasUpdated ?? 0}), ignorados ${catalog.skipped ?? 0} (areas ${catalog.computerAreasSkipped ?? 0}).`,
+      `Catalogo: locais +${catalog.localsCreated ?? 0}, operacoes +${catalog.operationsCreated ?? 0}, equipamentos +${catalog.equipmentsCreated ?? 0}, areas de computadores +${catalog.computerAreasCreated ?? 0}, areas de balancas +${catalog.backofficeScaleAreasCreated ?? 0}, atualizados ${catalog.updated ?? 0} (computadores ${catalog.computerAreasUpdated ?? 0}, balancas ${catalog.backofficeScaleAreasUpdated ?? 0}), ignorados ${catalog.skipped ?? 0} (computadores ${catalog.computerAreasSkipped ?? 0}, balancas ${catalog.backofficeScaleAreasSkipped ?? 0}).`,
     );
   }
 
@@ -99,7 +105,7 @@ function buildImportResultMessage(data: ImportResponse): string {
 
   if (projects) {
     lines.push(
-      `Projetos/Versoes: projetos +${projects.projectsCreated ?? 0} (${projects.projectsUpdated ?? 0} atualizados), requisicoes +${projects.requisitionsCreated ?? 0} (${projects.requisitionsUpdated ?? 0} atualizadas), configs +${projects.projectConfigsCreated ?? 0} (${projects.projectConfigsUpdated ?? 0} atualizadas), itens +${projects.itemsCreated ?? 0} (${projects.itemsUpdated ?? 0} atualizados), areas de computadores +${projects.computerAreasCreated ?? 0} (${projects.computerAreasUpdated ?? 0} atualizadas).`,
+      `Projetos/Versoes: projetos +${projects.projectsCreated ?? 0} (${projects.projectsUpdated ?? 0} atualizados), requisicoes +${projects.requisitionsCreated ?? 0} (${projects.requisitionsUpdated ?? 0} atualizadas), configs +${projects.projectConfigsCreated ?? 0} (${projects.projectConfigsUpdated ?? 0} atualizadas), itens +${projects.itemsCreated ?? 0} (${projects.itemsUpdated ?? 0} atualizados), areas de computadores +${projects.computerAreasCreated ?? 0} (${projects.computerAreasUpdated ?? 0} atualizadas), areas de balancas +${projects.backofficeScaleAreasCreated ?? 0} (${projects.backofficeScaleAreasUpdated ?? 0} atualizadas).`,
     );
   }
 
@@ -278,7 +284,7 @@ export default function SystemSettings() {
                   onChange={() => toggleExportSelection('includeCatalog')}
                 />
               }
-              label="Catalogo (Locais, Operacoes e Equipamentos)"
+              label="Catalogo (Locais, Operacoes, Equipamentos, Areas de Computadores e Areas de Balancas)"
             />
             <FormControlLabel
               control={
@@ -333,14 +339,14 @@ export default function SystemSettings() {
 
             <FormGroup>
               <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={importSelection.includeCatalog}
-                    onChange={() => toggleImportSelection('includeCatalog')}
-                  />
-                }
-                label="Catalogo (Locais, Operacoes e Equipamentos)"
-              />
+              control={
+                <Checkbox
+                  checked={importSelection.includeCatalog}
+                  onChange={() => toggleImportSelection('includeCatalog')}
+                />
+              }
+              label="Catalogo (Locais, Operacoes, Equipamentos, Areas de Computadores e Areas de Balancas)"
+            />
               <FormControlLabel
                 control={
                   <Checkbox

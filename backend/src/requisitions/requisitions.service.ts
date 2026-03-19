@@ -1137,6 +1137,56 @@ export class RequisitionsService {
     });
   }
 
+  private async syncBackofficeScaleAreasForRequisition(tx: Prisma.TransactionClient, requisitionId: string) {
+    const requisition = await tx.requisition.findUnique({
+      where: { id: requisitionId },
+      select: { id: true, status: true },
+    });
+    if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
+
+    const areas = await tx.backofficeScaleAreaCatalog.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+
+    const existing = await tx.requisitionBackofficeScaleArea.findMany({
+      where: { requisitionId },
+      select: { id: true, areaId: true },
+    });
+
+    const activeAreaIds = new Set(areas.map((area) => area.id));
+    const existingAreaIds = new Set(existing.map((item) => item.areaId));
+
+    const missing = areas.filter((area) => !existingAreaIds.has(area.id));
+    if (missing.length > 0) {
+      await tx.requisitionBackofficeScaleArea.createMany({
+        data: missing.map((area) => ({
+          requisitionId,
+          areaId: area.id,
+          quantity: 0,
+        })),
+      });
+    }
+
+    if (requisition.status === ReqStatus.PENDING) {
+      const staleIds = existing.filter((item) => !activeAreaIds.has(item.areaId)).map((item) => item.id);
+      if (staleIds.length > 0) {
+        await tx.requisitionBackofficeScaleArea.deleteMany({
+          where: { id: { in: staleIds } },
+        });
+      }
+    }
+
+    return tx.requisitionBackofficeScaleArea.findMany({
+      where: {
+        requisitionId,
+        area: { isActive: true },
+      },
+      include: { area: true },
+      orderBy: [{ area: { sortOrder: 'asc' } }, { area: { name: 'asc' } }],
+    });
+  }
+
   async createInitialRequisition(projectId: string, version?: string) {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Projeto nao encontrado.');
@@ -1156,6 +1206,7 @@ export class RequisitionsService {
       await this.syncProjectConfigs(tx, requisition.id);
       await this.syncCatalogItemsForRequisition(tx, requisition.id);
       await this.syncComputerAreasForRequisition(tx, requisition.id);
+      await this.syncBackofficeScaleAreasForRequisition(tx, requisition.id);
       return requisition;
     });
 
@@ -1237,6 +1288,7 @@ export class RequisitionsService {
       await this.syncCatalogItemsForRequisition(tx, newReq.id);
       await this.syncProjectConfigs(tx, newReq.id, req.id);
       await this.syncComputerAreasForRequisition(tx, newReq.id);
+      await this.syncBackofficeScaleAreasForRequisition(tx, newReq.id);
       return newReq;
     });
 
@@ -1295,6 +1347,15 @@ export class RequisitionsService {
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return this.syncComputerAreasForRequisition(tx, reqId);
+    });
+  }
+
+  async findBackofficeScaleAreas(reqId: string) {
+    const requisition = await this.prisma.requisition.findUnique({ where: { id: reqId } });
+    if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      return this.syncBackofficeScaleAreasForRequisition(tx, reqId);
     });
   }
 
@@ -1422,6 +1483,35 @@ export class RequisitionsService {
     });
   }
 
+  async updateBackofficeScaleAreaQuantity(rowId: string, quantity: number, currentLock: number) {
+    const row = await this.prisma.requisitionBackofficeScaleArea.findUnique({
+      where: { id: rowId },
+      include: {
+        requisition: true,
+        area: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Area de balancas retaguarda nao encontrada.');
+    if (row.versionLock !== currentLock) {
+      throw new ConflictException('Conflito de edicao na area. Atualize a tela.');
+    }
+    if (row.requisition.isReadOnly) {
+      throw new BadRequestException('Requisicao em modo somente leitura.');
+    }
+    if (!Number.isFinite(quantity)) {
+      throw new BadRequestException('Quantidade invalida para area de balancas retaguarda.');
+    }
+
+    return this.prisma.requisitionBackofficeScaleArea.update({
+      where: { id: rowId },
+      data: {
+        quantity,
+        versionLock: { increment: 1 },
+      },
+      include: { area: true },
+    });
+  }
+
   async autoFillItemsFromProjectConfigs(reqId: string) {
     const requisition = await this.prisma.requisition.findUnique({ where: { id: reqId } });
     if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
@@ -1429,15 +1519,19 @@ export class RequisitionsService {
       throw new BadRequestException('Requisicao em modo somente leitura.');
     }
 
-    const { configs, computerAreas } = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await this.syncCatalogItemsForRequisition(tx, reqId);
-      const syncedConfigs = await this.syncProjectConfigs(tx, reqId);
-      const syncedComputerAreas = await this.syncComputerAreasForRequisition(tx, reqId);
-      return {
-        configs: syncedConfigs,
-        computerAreas: syncedComputerAreas,
-      };
-    });
+    const { configs, computerAreas, backofficeScaleAreas } = await this.prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => {
+        await this.syncCatalogItemsForRequisition(tx, reqId);
+        const syncedConfigs = await this.syncProjectConfigs(tx, reqId);
+        const syncedComputerAreas = await this.syncComputerAreasForRequisition(tx, reqId);
+        const syncedBackofficeScaleAreas = await this.syncBackofficeScaleAreasForRequisition(tx, reqId);
+        return {
+          configs: syncedConfigs,
+          computerAreas: syncedComputerAreas,
+          backofficeScaleAreas: syncedBackofficeScaleAreas,
+        };
+      },
+    );
 
     const configByFieldId = new Map<string, string>();
     for (const config of configs) {
@@ -1465,6 +1559,29 @@ export class RequisitionsService {
     for (const [areaName, quantity] of computerAreaValues.entries()) {
       computerFormulaVariables[`Computadores - ${areaName}`] = quantity;
       computerFormulaVariables[`Area Computadores - ${areaName}`] = quantity;
+    }
+
+    const backofficeScaleAreaValues = new Map<string, number>();
+    let totalBackofficeScales = 0;
+    for (const row of backofficeScaleAreas as Array<any>) {
+      const areaName = this.normalizeText(row?.area?.name);
+      const quantity = typeof row?.quantity === 'number' && Number.isFinite(row.quantity) ? row.quantity : 0;
+      totalBackofficeScales += quantity;
+      if (areaName) {
+        backofficeScaleAreaValues.set(areaName, quantity);
+      }
+    }
+
+    const backofficeScaleFormulaVariables: Record<string, unknown> = {
+      'Balancas Retaguarda - Total': totalBackofficeScales,
+      'Total Balancas Retaguarda': totalBackofficeScales,
+      TotalBalancasRetaguarda: totalBackofficeScales,
+      BalancasRetaguardaTotal: totalBackofficeScales,
+    };
+
+    for (const [areaName, quantity] of backofficeScaleAreaValues.entries()) {
+      backofficeScaleFormulaVariables[`Balancas Retaguarda - ${areaName}`] = quantity;
+      backofficeScaleFormulaVariables[`Area Balancas Retaguarda - ${areaName}`] = quantity;
     }
 
     const items = await this.prisma.requisitionItem.findMany({
@@ -1545,6 +1662,7 @@ export class RequisitionsService {
                 Codigo: item.equipmentCode ?? '',
                 Código: item.equipmentCode ?? '',
                 ...computerFormulaVariables,
+                ...backofficeScaleFormulaVariables,
               },
               allowUnknownTokensAsLiteral: true,
               quantityResolver: (local: unknown, operation: unknown, equipment: unknown) => {

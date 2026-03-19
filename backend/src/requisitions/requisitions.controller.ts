@@ -52,6 +52,12 @@ export class RequisitionsController {
     return this.requisitionsService.findComputerAreas(reqId);
   }
 
+  @Roles(Role.QUANTIFIER, Role.MANAGER, Role.AUDITOR, Role.ADMIN)
+  @Get(':reqId/backoffice-scale-areas')
+  findBackofficeScaleAreas(@Param('reqId') reqId: string) {
+    return this.requisitionsService.findBackofficeScaleAreas(reqId);
+  }
+
   @Roles(Role.QUANTIFIER, Role.ADMIN)
   @Put(':reqId/project-configs')
   upsertProjectConfigs(
@@ -90,6 +96,15 @@ export class RequisitionsController {
     @Body() body: { quantity: number; currentLock: number },
   ) {
     return this.requisitionsService.updateComputerAreaQuantity(rowId, body.quantity, body.currentLock);
+  }
+
+  @Roles(Role.QUANTIFIER, Role.ADMIN)
+  @Put('backoffice-scale-areas/:rowId/quantity')
+  updateBackofficeScaleAreaQuantity(
+    @Param('rowId') rowId: string,
+    @Body() body: { quantity: number; currentLock: number },
+  ) {
+    return this.requisitionsService.updateBackofficeScaleAreaQuantity(rowId, body.quantity, body.currentLock);
   }
 
   @Roles(Role.ADMIN)

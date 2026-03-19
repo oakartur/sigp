@@ -42,18 +42,19 @@ model Project {
 }
 
 model Requisition {
-  id             String                     @id @default(uuid())
-  projectId      String
-  project        Project                    @relation(fields: [projectId], references: [id])
-  version        String                     @default("V1")
-  status         ReqStatus                  @default(PENDING)
-  isReadOnly     Boolean                    @default(false)
-  items          RequisitionItem[]
-  computerAreas  RequisitionComputerArea[]
-  projectConfigs RequisitionProjectConfig[]
-  versionLock    Int                        @default(1)
-  createdAt      DateTime                   @default(now())
-  updatedAt      DateTime                   @updatedAt
+  id                  String                           @id @default(uuid())
+  projectId           String
+  project             Project                          @relation(fields: [projectId], references: [id])
+  version             String                           @default("V1")
+  status              ReqStatus                        @default(PENDING)
+  isReadOnly          Boolean                          @default(false)
+  items               RequisitionItem[]
+  computerAreas       RequisitionComputerArea[]
+  backofficeScaleAreas RequisitionBackofficeScaleArea[]
+  projectConfigs      RequisitionProjectConfig[]
+  versionLock         Int                              @default(1)
+  createdAt           DateTime                         @default(now())
+  updatedAt           DateTime                         @updatedAt
 }
 
 enum ItemStatus {
@@ -104,7 +105,7 @@ model ComputerAreaCatalog {
 }
 
 model RequisitionComputerArea {
-  id           String              @id @default(uuid())
+  id            String              @id @default(uuid())
   requisitionId String
   requisition  Requisition         @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
   areaId       String
@@ -113,6 +114,32 @@ model RequisitionComputerArea {
   versionLock  Int                 @default(1)
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
+
+  @@unique([requisitionId, areaId])
+  @@index([requisitionId])
+  @@index([areaId])
+}
+
+model BackofficeScaleAreaCatalog {
+  id           String                           @id @default(uuid())
+  name         String
+  sortOrder    Int                              @default(0)
+  isActive     Boolean                          @default(true)
+  createdAt    DateTime                         @default(now())
+  updatedAt    DateTime                         @updatedAt
+  requisitions RequisitionBackofficeScaleArea[]
+}
+
+model RequisitionBackofficeScaleArea {
+  id            String                    @id @default(uuid())
+  requisitionId String
+  requisition   Requisition               @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  areaId        String
+  area          BackofficeScaleAreaCatalog @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  quantity      Float                     @default(0)
+  versionLock   Int                       @default(1)
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
 
   @@unique([requisitionId, areaId])
   @@index([requisitionId])

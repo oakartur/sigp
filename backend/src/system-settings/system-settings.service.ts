@@ -687,6 +687,77 @@ export class SystemSettingsService {
     return summary;
   }
 
+  private async importBackofficeScaleAreasCatalog(
+    tx: TxClient,
+    rawAreas: unknown,
+  ): Promise<{ created: number; updated: number; skipped: number }> {
+    const summary = {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+    };
+
+    const importedAreas = this.asRecordArray(rawAreas);
+    const existingAreas = await tx.backofficeScaleAreaCatalog.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+
+    const existingByNameKey = new Map<string, (typeof existingAreas)[number]>();
+    for (const area of existingAreas) {
+      existingByNameKey.set(this.normalizeKey(area.name), area);
+    }
+
+    let maxSortOrder = existingAreas.reduce((max, area) => Math.max(max, area.sortOrder), -1);
+
+    for (let index = 0; index < importedAreas.length; index++) {
+      const rawArea = importedAreas[index];
+      const name = this.asString(rawArea.name);
+      if (!name) {
+        summary.skipped++;
+        continue;
+      }
+
+      const nameKey = this.normalizeKey(name);
+      const sortOrder = this.asInteger(rawArea.sortOrder, maxSortOrder + 1 + index);
+      const isActive = this.asBoolean(rawArea.isActive, true);
+      maxSortOrder = Math.max(maxSortOrder, sortOrder);
+
+      const existing = existingByNameKey.get(nameKey);
+      if (!existing) {
+        const created = await tx.backofficeScaleAreaCatalog.create({
+          data: {
+            name,
+            sortOrder,
+            isActive,
+          },
+        });
+        existingByNameKey.set(nameKey, created);
+        summary.created++;
+        continue;
+      }
+
+      const needsUpdate =
+        existing.name !== name || existing.sortOrder !== sortOrder || existing.isActive !== isActive;
+      if (!needsUpdate) {
+        summary.skipped++;
+        continue;
+      }
+
+      const updated = await tx.backofficeScaleAreaCatalog.update({
+        where: { id: existing.id },
+        data: {
+          name,
+          sortOrder,
+          isActive,
+        },
+      });
+      existingByNameKey.set(nameKey, updated);
+      summary.updated++;
+    }
+
+    return summary;
+  }
+
   private async buildEquipmentLookup(tx: TxClient): Promise<Map<string, string>> {
     const equipments = await tx.equipmentCatalog.findMany({
       include: {
@@ -736,6 +807,9 @@ export class SystemSettingsService {
       computerAreasCreated: 0,
       computerAreasUpdated: 0,
       computerAreasSkipped: 0,
+      backofficeScaleAreasCreated: 0,
+      backofficeScaleAreasUpdated: 0,
+      backofficeScaleAreasSkipped: 0,
     };
 
     const importedProjects = this.asRecordArray(rawProjects);
@@ -750,6 +824,13 @@ export class SystemSettingsService {
     for (const area of catalogAreas) {
       computerAreaIdBySourceId.set(area.id, area.id);
       computerAreaIdByNameKey.set(this.normalizeKey(area.name), area.id);
+    }
+    const backofficeCatalogAreas = await tx.backofficeScaleAreaCatalog.findMany();
+    const backofficeScaleAreaIdBySourceId = new Map<string, string>();
+    const backofficeScaleAreaIdByNameKey = new Map<string, string>();
+    for (const area of backofficeCatalogAreas) {
+      backofficeScaleAreaIdBySourceId.set(area.id, area.id);
+      backofficeScaleAreaIdByNameKey.set(this.normalizeKey(area.name), area.id);
     }
 
     for (const projectRaw of importedProjects) {
@@ -1032,6 +1113,58 @@ export class SystemSettingsService {
             summary.computerAreasSkipped++;
           }
         }
+
+        const existingBackofficeScaleAreas = await tx.requisitionBackofficeScaleArea.findMany({
+          where: { requisitionId: requisition.id },
+        });
+        const existingBackofficeScaleAreaByAreaId = new Map(
+          existingBackofficeScaleAreas.map((row) => [row.areaId, row]),
+        );
+        const importedBackofficeScaleAreas = this.asRecordArray(requisitionRaw.backofficeScaleAreas);
+
+        for (const rowRaw of importedBackofficeScaleAreas) {
+          const sourceAreaId = this.asString(rowRaw.areaId);
+          let areaId = (sourceAreaId && backofficeScaleAreaIdBySourceId.get(sourceAreaId)) || null;
+
+          if (!areaId) {
+            const nestedArea = this.asRecord(rowRaw.area);
+            const nestedAreaName = this.asString(nestedArea?.name);
+            if (nestedAreaName) {
+              areaId = backofficeScaleAreaIdByNameKey.get(this.normalizeKey(nestedAreaName)) ?? null;
+            }
+          }
+
+          if (!areaId) {
+            summary.backofficeScaleAreasSkipped++;
+            continue;
+          }
+
+          const quantity = this.asNumber(rowRaw.quantity, 0);
+          const existingRow = existingBackofficeScaleAreaByAreaId.get(areaId);
+          if (!existingRow) {
+            const createdRow = await tx.requisitionBackofficeScaleArea.create({
+              data: {
+                requisitionId: requisition.id,
+                areaId,
+                quantity,
+              },
+            });
+            existingBackofficeScaleAreaByAreaId.set(areaId, createdRow);
+            summary.backofficeScaleAreasCreated++;
+            continue;
+          }
+
+          if (existingRow.quantity !== quantity) {
+            const updatedRow = await tx.requisitionBackofficeScaleArea.update({
+              where: { id: existingRow.id },
+              data: { quantity },
+            });
+            existingBackofficeScaleAreaByAreaId.set(areaId, updatedRow);
+            summary.backofficeScaleAreasUpdated++;
+          } else {
+            summary.backofficeScaleAreasSkipped++;
+          }
+        }
       }
     }
 
@@ -1076,6 +1209,10 @@ export class SystemSettingsService {
       payload.computerAreasCatalog = await this.prisma.computerAreaCatalog.findMany({
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       });
+
+      payload.backofficeScaleAreasCatalog = await this.prisma.backofficeScaleAreaCatalog.findMany({
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      });
     }
 
     if (selection.includeProjectHeaderFields) {
@@ -1099,6 +1236,12 @@ export class SystemSettingsService {
                 },
               },
               computerAreas: {
+                orderBy: [{ area: { sortOrder: 'asc' } }, { area: { name: 'asc' } }],
+                include: {
+                  area: true,
+                },
+              },
+              backofficeScaleAreas: {
                 orderBy: [{ area: { sortOrder: 'asc' } }, { area: { name: 'asc' } }],
                 include: {
                   area: true,
@@ -1177,6 +1320,13 @@ export class SystemSettingsService {
             updated: 0,
             skipped: 0,
           };
+      const backofficeScaleAreasImportSummary = input.includeCatalog
+        ? await this.importBackofficeScaleAreasCatalog(tx, payload.backofficeScaleAreasCatalog)
+        : {
+            created: 0,
+            updated: 0,
+            skipped: 0,
+          };
 
       const equipmentLookup = await this.buildEquipmentLookup(tx);
       const projectsImport = input.includeProjectsAndActiveVersions
@@ -1201,6 +1351,12 @@ export class SystemSettingsService {
             itemsCreated: 0,
             itemsUpdated: 0,
             itemsSkipped: 0,
+            computerAreasCreated: 0,
+            computerAreasUpdated: 0,
+            computerAreasSkipped: 0,
+            backofficeScaleAreasCreated: 0,
+            backofficeScaleAreasUpdated: 0,
+            backofficeScaleAreasSkipped: 0,
           };
 
       return {
@@ -1217,6 +1373,9 @@ export class SystemSettingsService {
             computerAreasCreated: computerAreasImportSummary.created,
             computerAreasUpdated: computerAreasImportSummary.updated,
             computerAreasSkipped: computerAreasImportSummary.skipped,
+            backofficeScaleAreasCreated: backofficeScaleAreasImportSummary.created,
+            backofficeScaleAreasUpdated: backofficeScaleAreasImportSummary.updated,
+            backofficeScaleAreasSkipped: backofficeScaleAreasImportSummary.skipped,
           },
           projectHeaderFields: fieldsImport.summary,
           projectsAndActiveVersions: projectsImport,

@@ -74,6 +74,18 @@ interface RequisitionComputerAreaRow {
   };
 }
 
+interface RequisitionBackofficeScaleAreaRow {
+  id: string;
+  quantity: number;
+  versionLock: number;
+  area: {
+    id: string;
+    name: string;
+    sortOrder: number;
+    isActive: boolean;
+  };
+}
+
 export default function RequisitionGrid() {
   const { reqId } = useParams();
   const navigate = useNavigate();
@@ -81,14 +93,17 @@ export default function RequisitionGrid() {
   const [rows, setRows] = useState<RequisitionItemRow[]>([]);
   const [configs, setConfigs] = useState<ProjectConfig[]>([]);
   const [computerAreas, setComputerAreas] = useState<RequisitionComputerAreaRow[]>([]);
+  const [backofficeScaleAreas, setBackofficeScaleAreas] = useState<RequisitionBackofficeScaleAreaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingConfigs, setSavingConfigs] = useState(false);
   const [savingQuantities, setSavingQuantities] = useState(false);
   const [savingComputerAreas, setSavingComputerAreas] = useState(false);
+  const [savingBackofficeScaleAreas, setSavingBackofficeScaleAreas] = useState(false);
   const [autoFilling, setAutoFilling] = useState(false);
   const [autoSyncError, setAutoSyncError] = useState<string | null>(null);
   const [quantitySyncError, setQuantitySyncError] = useState<string | null>(null);
   const [computerAreaSyncError, setComputerAreaSyncError] = useState<string | null>(null);
+  const [backofficeScaleAreaSyncError, setBackofficeScaleAreaSyncError] = useState<string | null>(null);
   const [lastAutoSyncAt, setLastAutoSyncAt] = useState<number | null>(null);
   const [dirtyRowIds, setDirtyRowIds] = useState<string[]>([]);
   const [rowSelectionModel, setRowSelectionModel] = useState<GridRowSelectionModel>({
@@ -99,11 +114,13 @@ export default function RequisitionGrid() {
   const [bulkApplying, setBulkApplying] = useState(false);
   const [projectConfigsCollapsed, setProjectConfigsCollapsed] = useState(false);
   const [computerAreasCollapsed, setComputerAreasCollapsed] = useState(false);
+  const [backofficeScaleAreasCollapsed, setBackofficeScaleAreasCollapsed] = useState(false);
 
   const latestConfigsRef = useRef<ProjectConfig[]>([]);
   const autoSyncTimerRef = useRef<number | null>(null);
   const quantitySyncTimerRef = useRef<number | null>(null);
   const computerAreaSyncTimerRef = useRef<number | null>(null);
+  const backofficeScaleAreaSyncTimerRef = useRef<number | null>(null);
   const syncInFlightRef = useRef(false);
   const pendingResyncRef = useRef(false);
   const configDirtyRef = useRef(false);
@@ -113,6 +130,9 @@ export default function RequisitionGrid() {
   const computerAreaSyncInFlightRef = useRef(false);
   const computerAreaPendingResyncRef = useRef(false);
   const computerAreaQueueRef = useRef<Map<string, { quantity: number; currentLock: number }>>(new Map());
+  const backofficeScaleAreaSyncInFlightRef = useRef(false);
+  const backofficeScaleAreaPendingResyncRef = useRef(false);
+  const backofficeScaleAreaQueueRef = useRef<Map<string, { quantity: number; currentLock: number }>>(new Map());
 
   const [filterLocal, setFilterLocal] = useState('');
   const [filterOperation, setFilterOperation] = useState('');
@@ -132,6 +152,9 @@ export default function RequisitionGrid() {
       }
       if (computerAreaSyncTimerRef.current !== null) {
         window.clearTimeout(computerAreaSyncTimerRef.current);
+      }
+      if (backofficeScaleAreaSyncTimerRef.current !== null) {
+        window.clearTimeout(backofficeScaleAreaSyncTimerRef.current);
       }
     };
   }, []);
@@ -318,6 +341,70 @@ export default function RequisitionGrid() {
     scheduleComputerAreaSync();
   };
 
+  const flushBackofficeScaleAreaQueue = async () => {
+    if (!reqId) return;
+    if (backofficeScaleAreaSyncInFlightRef.current) {
+      backofficeScaleAreaPendingResyncRef.current = true;
+      return;
+    }
+    if (backofficeScaleAreaQueueRef.current.size === 0) return;
+
+    backofficeScaleAreaSyncInFlightRef.current = true;
+    setSavingBackofficeScaleAreas(true);
+    setBackofficeScaleAreaSyncError(null);
+
+    const queueBatch = Array.from(backofficeScaleAreaQueueRef.current.entries());
+    backofficeScaleAreaQueueRef.current.clear();
+    let hasSuccessfulBackofficeScaleAreaUpdate = false;
+
+    for (const [rowId, payload] of queueBatch) {
+      try {
+        const response = await api.put(`/requisitions/backoffice-scale-areas/${rowId}/quantity`, {
+          quantity: payload.quantity,
+          currentLock: payload.currentLock,
+        });
+        const updatedRow = response.data as RequisitionBackofficeScaleAreaRow;
+        setBackofficeScaleAreas((previous) =>
+          previous.map((row) => (row.id === rowId ? updatedRow : row)),
+        );
+        hasSuccessfulBackofficeScaleAreaUpdate = true;
+      } catch (error) {
+        const message = parseApiErrorMessage(error, 'Erro ao salvar quantidade de balancas retaguarda.');
+        setBackofficeScaleAreaSyncError(message);
+      }
+    }
+
+    if (hasSuccessfulBackofficeScaleAreaUpdate) {
+      await runAutoFill();
+    }
+
+    backofficeScaleAreaSyncInFlightRef.current = false;
+    setSavingBackofficeScaleAreas(false);
+
+    if (backofficeScaleAreaPendingResyncRef.current || backofficeScaleAreaQueueRef.current.size > 0) {
+      backofficeScaleAreaPendingResyncRef.current = false;
+      void flushBackofficeScaleAreaQueue();
+    }
+  };
+
+  const scheduleBackofficeScaleAreaSync = () => {
+    if (backofficeScaleAreaSyncTimerRef.current !== null) {
+      window.clearTimeout(backofficeScaleAreaSyncTimerRef.current);
+    }
+
+    backofficeScaleAreaSyncTimerRef.current = window.setTimeout(() => {
+      void flushBackofficeScaleAreaQueue();
+    }, 450);
+  };
+
+  const enqueueBackofficeScaleAreaSave = (row: RequisitionBackofficeScaleAreaRow, quantity: number) => {
+    backofficeScaleAreaQueueRef.current.set(row.id, {
+      quantity,
+      currentLock: row.versionLock,
+    });
+    scheduleBackofficeScaleAreaSync();
+  };
+
   const performAutoSync = async () => {
     if (!reqId) return;
     if (!configDirtyRef.current) return;
@@ -379,6 +466,7 @@ export default function RequisitionGrid() {
         void performAutoSync();
         void flushQuantityQueue();
         void flushComputerAreaQueue();
+        void flushBackofficeScaleAreaQueue();
       }
     };
 
@@ -401,24 +489,33 @@ export default function RequisitionGrid() {
       window.clearTimeout(computerAreaSyncTimerRef.current);
       computerAreaSyncTimerRef.current = null;
     }
+    if (backofficeScaleAreaSyncTimerRef.current !== null) {
+      window.clearTimeout(backofficeScaleAreaSyncTimerRef.current);
+      backofficeScaleAreaSyncTimerRef.current = null;
+    }
     quantityQueueRef.current.clear();
     quantityPendingResyncRef.current = false;
     quantitySyncInFlightRef.current = false;
     computerAreaQueueRef.current.clear();
     computerAreaPendingResyncRef.current = false;
     computerAreaSyncInFlightRef.current = false;
+    backofficeScaleAreaQueueRef.current.clear();
+    backofficeScaleAreaPendingResyncRef.current = false;
+    backofficeScaleAreaSyncInFlightRef.current = false;
 
     setLoading(true);
     try {
-      const [itemsResponse, configsResponse, computerAreasResponse] = await Promise.all([
+      const [itemsResponse, configsResponse, computerAreasResponse, backofficeScaleAreasResponse] = await Promise.all([
         api.get(`/requisitions/${reqId}/items`),
         api.get(`/requisitions/${reqId}/project-configs`),
         api.get(`/requisitions/${reqId}/computer-areas`),
+        api.get(`/requisitions/${reqId}/backoffice-scale-areas`),
       ]);
 
       setRows(itemsResponse.data || []);
       const loadedConfigs = mapProjectConfigs(configsResponse.data || []);
       setComputerAreas(computerAreasResponse.data || []);
+      setBackofficeScaleAreas(backofficeScaleAreasResponse.data || []);
       latestConfigsRef.current = loadedConfigs;
       setConfigs(loadedConfigs);
       configDirtyRef.current = false;
@@ -426,6 +523,7 @@ export default function RequisitionGrid() {
       setAutoSyncError(null);
       setQuantitySyncError(null);
       setComputerAreaSyncError(null);
+      setBackofficeScaleAreaSyncError(null);
       setDirtyRowIds([]);
       setRowSelectionModel({ type: 'include', ids: new Set() });
     } catch (error) {
@@ -520,12 +618,30 @@ export default function RequisitionGrid() {
     [computerAreas],
   );
 
+  const backofficeScaleAreasTotal = useMemo(
+    () =>
+      backofficeScaleAreas.reduce((acc, row) => {
+        const value = Number(row.quantity);
+        if (!Number.isFinite(value)) return acc;
+        return acc + value;
+      }, 0),
+    [backofficeScaleAreas],
+  );
+
   const handleComputerAreaQuantityChange = (row: RequisitionComputerAreaRow, rawValue: string) => {
     const quantity = normalizeComputerAreaQuantity(rawValue);
     setComputerAreas((previous) =>
       previous.map((current) => (current.id === row.id ? { ...current, quantity } : current)),
     );
     enqueueComputerAreaSave(row, quantity);
+  };
+
+  const handleBackofficeScaleAreaQuantityChange = (row: RequisitionBackofficeScaleAreaRow, rawValue: string) => {
+    const quantity = normalizeComputerAreaQuantity(rawValue);
+    setBackofficeScaleAreas((previous) =>
+      previous.map((current) => (current.id === row.id ? { ...current, quantity } : current)),
+    );
+    enqueueBackofficeScaleAreaSave(row, quantity);
   };
 
   const columns: GridColDef[] = [
@@ -728,12 +844,15 @@ export default function RequisitionGrid() {
           <Typography
             variant="body2"
             sx={{
-              color: autoSyncError || quantitySyncError || computerAreaSyncError ? 'error.main' : 'text.secondary',
+              color:
+                autoSyncError || quantitySyncError || computerAreaSyncError || backofficeScaleAreaSyncError
+                  ? 'error.main'
+                  : 'text.secondary',
               minWidth: { xs: 0, md: 260 },
               textAlign: 'right',
             }}
           >
-            {savingConfigs || autoFilling || savingQuantities || savingComputerAreas
+            {savingConfigs || autoFilling || savingQuantities || savingComputerAreas || savingBackofficeScaleAreas
               ? 'Sincronizando automaticamente...'
               : autoSyncError
                 ? autoSyncError
@@ -741,6 +860,8 @@ export default function RequisitionGrid() {
                   ? quantitySyncError
                   : computerAreaSyncError
                     ? computerAreaSyncError
+                    : backofficeScaleAreaSyncError
+                      ? backofficeScaleAreaSyncError
                 : lastAutoSyncAt
                   ? `Sincronizado as ${new Date(lastAutoSyncAt).toLocaleTimeString('pt-BR')}`
                   : 'Sincronizacao automatica ativa'}
@@ -763,12 +884,17 @@ export default function RequisitionGrid() {
           </Stack>
         </Paper>
 
-        {(autoSyncError || quantitySyncError || computerAreaSyncError) && (
+        {(autoSyncError || quantitySyncError || computerAreaSyncError || backofficeScaleAreaSyncError) && (
           <Stack spacing={1.25} sx={{ mb: 2 }}>
             {autoSyncError && <Alert severity="warning">Falha ao sincronizar configuracoes: {autoSyncError}</Alert>}
             {quantitySyncError && <Alert severity="warning">Falha ao sincronizar quantidades: {quantitySyncError}</Alert>}
             {computerAreaSyncError && (
               <Alert severity="warning">Falha ao sincronizar tabela de computadores: {computerAreaSyncError}</Alert>
+            )}
+            {backofficeScaleAreaSyncError && (
+              <Alert severity="warning">
+                Falha ao sincronizar tabela de balancas retaguarda: {backofficeScaleAreaSyncError}
+              </Alert>
             )}
           </Stack>
         )}
@@ -807,6 +933,86 @@ export default function RequisitionGrid() {
                   renderConfigInput(config)
                 ))}
               </Box>
+            )}
+          </Collapse>
+        </Paper>
+
+        <Paper sx={{ p: 2, mb: 2 }}>
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={1.25}
+            alignItems={{ xs: 'stretch', md: 'center' }}
+            sx={{ mb: backofficeScaleAreasCollapsed ? 0 : 1.5 }}
+          >
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
+              <Typography variant="subtitle1">Balancas Retaguarda por Area</Typography>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <IconButton
+                  size="small"
+                  color="primary"
+                  onClick={() => setBackofficeScaleAreasCollapsed((previous) => !previous)}
+                  title={backofficeScaleAreasCollapsed ? 'Expandir' : 'Minimizar'}
+                >
+                  {backofficeScaleAreasCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
+                </IconButton>
+                <Chip label={`Areas: ${backofficeScaleAreas.length}`} variant="outlined" />
+                <Chip
+                  label={`Linha ${backofficeScaleAreas.length + 1} - Total: ${backofficeScaleAreasTotal.toLocaleString('pt-BR')}`}
+                  color="secondary"
+                />
+              </Stack>
+            </Stack>
+          </Stack>
+
+          <Collapse in={!backofficeScaleAreasCollapsed}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+              Para formulas do catalogo, use `{'{{Balancas Retaguarda - Total}}'}` e `{'{{Balancas Retaguarda - Nome da Area}}'}`.
+            </Typography>
+
+            {loading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : backofficeScaleAreas.length === 0 ? (
+              <Alert severity="info">
+                Nenhuma area configurada. Cadastre as areas em Configuracao - Catalogo de balancas retaguarda.
+              </Alert>
+            ) : (
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell width={90}>Linha</TableCell>
+                    <TableCell>Area</TableCell>
+                    <TableCell align="right" width={180}>
+                      Quantidade
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {backofficeScaleAreas.map((row, index) => (
+                    <TableRow key={row.id}>
+                      <TableCell>{index + 1}</TableCell>
+                      <TableCell>{row.area?.name || '-'}</TableCell>
+                      <TableCell align="right">
+                        <TextField
+                          size="small"
+                          type="number"
+                          value={row.quantity}
+                          onChange={(event) => handleBackofficeScaleAreaQuantityChange(row, event.target.value)}
+                          sx={{ width: 140 }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow>
+                    <TableCell>{backofficeScaleAreas.length + 1}</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>
+                      {backofficeScaleAreasTotal.toLocaleString('pt-BR')}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
             )}
           </Collapse>
         </Paper>

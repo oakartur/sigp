@@ -31,6 +31,7 @@ import {
   ArrowBack as ArrowBackIcon,
   Add as AddIcon,
   Computer as ComputerIcon,
+  Scale as ScaleIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
@@ -450,6 +451,14 @@ export default function CatalogsConfig() {
               onClick={() => navigate('/settings/catalogs/computer-areas')}
             >
               Areas de computadores
+            </Button>
+            <Button
+              variant="outlined"
+              color="primary"
+              startIcon={<ScaleIcon />}
+              onClick={() => navigate('/settings/catalogs/backoffice-scales')}
+            >
+              Balancas retaguarda
             </Button>
             <Button variant="outlined" color="error" onClick={handleClearCatalog} disabled={clearingCatalog || loading}>
               {clearingCatalog ? 'Limpando...' : 'Limpar catalogo'}

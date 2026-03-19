@@ -10,6 +10,7 @@ import CatalogsConfig from './pages/CatalogsConfig';
 import SystemSettings from './pages/SystemSettings';
 import UsersSettings from './pages/UsersSettings';
 import ComputerAreasConfig from './pages/ComputerAreasConfig';
+import BackofficeScalesConfig from './pages/BackofficeScalesConfig';
 import PrivateRoute from './components/PrivateRoute';
 
 const theme = createTheme({
@@ -212,7 +213,17 @@ function App() {
               }
             />
 
+            <Route
+              path="/settings/catalogs/backoffice-scales"
+              element={
+                <PrivateRoute allowedRoles={['ADMIN']}>
+                  <BackofficeScalesConfig />
+                </PrivateRoute>
+              }
+            />
+
             <Route path="/settings/computer-areas" element={<Navigate to="/settings/catalogs/computer-areas" replace />} />
+            <Route path="/settings/backoffice-scales" element={<Navigate to="/settings/catalogs/backoffice-scales" replace />} />
 
             <Route
               path="/settings/header-fields"

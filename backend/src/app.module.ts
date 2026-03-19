@@ -13,6 +13,7 @@ import { CatalogModule } from './catalog/catalog.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { UsersModule } from './users/users.module';
 import { ComputerAreasModule } from './computer-areas/computer-areas.module';
+import { BackofficeScalesModule } from './backoffice-scales/backoffice-scales.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { ComputerAreasModule } from './computer-areas/computer-areas.module';
     ProjectHeaderFieldsModule,
     CatalogModule,
     ComputerAreasModule,
+    BackofficeScalesModule,
     SystemSettingsModule,
     UsersModule,
   ],
