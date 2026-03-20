@@ -455,6 +455,13 @@ export default function CatalogsConfig() {
             <Button
               variant="outlined"
               color="primary"
+              onClick={() => navigate('/settings/catalogs/unit-costs')}
+            >
+              Custo Unitário
+            </Button>
+            <Button
+              variant="outlined"
+              color="primary"
               startIcon={<ScaleIcon />}
               onClick={() => navigate('/settings/catalogs/backoffice-scales')}
             >

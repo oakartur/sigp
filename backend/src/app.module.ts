@@ -14,6 +14,7 @@ import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { UsersModule } from './users/users.module';
 import { ComputerAreasModule } from './computer-areas/computer-areas.module';
 import { BackofficeScalesModule } from './backoffice-scales/backoffice-scales.module';
+import { UnitCostsModule } from './unit-costs/unit-costs.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { BackofficeScalesModule } from './backoffice-scales/backoffice-scales.mo
     ComputerAreasModule,
     BackofficeScalesModule,
     SystemSettingsModule,
+    UnitCostsModule,
     UsersModule,
   ],
 })
