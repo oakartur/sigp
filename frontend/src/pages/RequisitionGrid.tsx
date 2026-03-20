@@ -11,6 +11,10 @@ import {
   Collapse,
   CircularProgress,
   Container,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   Divider,
   IconButton,
   MenuItem,
@@ -115,6 +119,7 @@ export default function RequisitionGrid() {
   const [projectConfigsCollapsed, setProjectConfigsCollapsed] = useState(true);
   const [computerAreasCollapsed, setComputerAreasCollapsed] = useState(true);
   const [backofficeScaleAreasCollapsed, setBackofficeScaleAreasCollapsed] = useState(true);
+  const [conferenceDialogOpen, setConferenceDialogOpen] = useState(false);
 
   const latestConfigsRef = useRef<ProjectConfig[]>([]);
   const autoSyncTimerRef = useRef<number | null>(null);
@@ -878,6 +883,9 @@ export default function RequisitionGrid() {
           <Button variant="outlined" onClick={handleExport} disabled={loading}>
             Gerar export
           </Button>
+          <Button variant="contained" onClick={() => setConferenceDialogOpen(true)} disabled={loading}>
+            Gerar Conferência
+          </Button>
         </Toolbar>
       </AppBar>
 
@@ -886,9 +894,6 @@ export default function RequisitionGrid() {
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', md: 'center' }}>
             <Chip label={`Itens totais: ${summary.total}`} color="primary" variant="outlined" />
             <Chip label={`Itens filtrados: ${summary.filtered}`} variant="outlined" />
-            <Chip label={`Pendentes (filtro): ${summary.pending}`} color="warning" variant="outlined" />
-            <Chip label={`Recebidos (filtro): ${summary.received}`} color="success" variant="outlined" />
-            <Chip label={`Qtd final filtrada: ${summary.filteredTotalQuantity.toLocaleString('pt-BR')}`} color="secondary" />
           </Stack>
         </Paper>
 
@@ -1239,6 +1244,79 @@ export default function RequisitionGrid() {
           />
         </Paper>
       </Container>
+
+      <Dialog open={conferenceDialogOpen} onClose={() => setConferenceDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Gerar Conferência</DialogTitle>
+        <DialogContent dividers>
+          {(() => {
+            const itemsWithFinalQty = filteredRows.filter((row) => getFinalQuantity(row) !== 0);
+            if (itemsWithFinalQty.length === 0) {
+              return <Typography>Nenhum equipamento com quantidade final diferente de zero.</Typography>;
+            }
+
+            const groupedByLocal: Record<string, Record<string, RequisitionItemRow[]>> = {};
+
+            itemsWithFinalQty.forEach((row) => {
+              const localName = row.localName || 'Sem Local';
+              const operationName = row.operationName || 'Sem Operação';
+              if (!groupedByLocal[localName]) groupedByLocal[localName] = {};
+              if (!groupedByLocal[localName][operationName]) groupedByLocal[localName][operationName] = [];
+              groupedByLocal[localName][operationName].push(row);
+            });
+
+            return Object.entries(groupedByLocal)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([localName, ops]) => (
+                <Box key={localName} sx={{ mb: 3 }}>
+                  <Typography variant="h6" color="primary" sx={{ mb: 1 }}>
+                    Local: {localName}
+                  </Typography>
+                  {Object.entries(ops)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([operationName, equipments]) => (
+                      <Box key={operationName} sx={{ mb: 2, ml: 2 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+                          Operação: {operationName}
+                        </Typography>
+                        <Table size="small" sx={{ mb: 1 }}>
+                          <TableHead sx={{ bgcolor: 'action.hover' }}>
+                            <TableRow>
+                              <TableCell>Equipamento</TableCell>
+                              <TableCell align="right" width={100}>Qtd Final</TableCell>
+                              <TableCell width={150}>Origem</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {equipments.map((row) => {
+                              const sourceType = String(row.quantitySourceType || 'PURCHASE');
+                              const label =
+                                sourceType === 'STOCK_AGP'
+                                  ? 'Estoque AGP'
+                                  : sourceType === 'STOCK_H2L'
+                                    ? 'Loc. H2L'
+                                    : sourceType === 'STOCK_EBT'
+                                      ? 'Comd. EBT'
+                                      : 'Compra';
+                              return (
+                                <TableRow key={row.id}>
+                                  <TableCell>{row.equipmentName}</TableCell>
+                                  <TableCell align="right">{getFinalQuantity(row)}</TableCell>
+                                  <TableCell>{label}</TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </Box>
+                    ))}
+                </Box>
+              ));
+          })()}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConferenceDialogOpen(false)}>Fechar</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
