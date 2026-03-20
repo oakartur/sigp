@@ -24,8 +24,10 @@ import {
   Group as GroupIcon,
   Settings as SettingsIcon,
   UploadFile as UploadFileIcon,
+  History as HistoryIcon,
+  Storage as StorageIcon,
 } from '@mui/icons-material';
-import { api } from '../context/AuthContext';
+import { api, useAuth } from '../context/AuthContext';
 
 type ExportSelection = {
   includeCatalog: boolean;
@@ -114,6 +116,7 @@ function buildImportResultMessage(data: ImportResponse): string {
 
 export default function SystemSettings() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportSelection, setExportSelection] = useState<ExportSelection>(defaultSelection);
@@ -262,6 +265,28 @@ export default function SystemSettings() {
             >
               Gerenciar usuários
             </Button>
+
+            {user?.role === 'DEVELOPER' && (
+              <>
+                <Button
+                  variant="outlined"
+                  startIcon={<HistoryIcon />}
+                  onClick={() => navigate('/settings/logs')}
+                  sx={{ alignSelf: 'flex-start' }}
+                >
+                  Auditoria / Logs
+                </Button>
+
+                <Button
+                  variant="outlined"
+                  startIcon={<StorageIcon />}
+                  onClick={() => navigate('/settings/backups')}
+                  sx={{ alignSelf: 'flex-start', color: '#B45309', borderColor: '#B45309' }}
+                >
+                  Gerenciamento de Backups
+                </Button>
+              </>
+            )}
 
             <Typography variant="caption" color="text.secondary">
               A exportação gera um arquivo JSON. A importação aplica merge sem duplicar os mesmos registros.

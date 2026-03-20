@@ -12,26 +12,26 @@ export class RequisitionsController {
 
   @Roles(Role.QUANTIFIER, Role.ADMIN)
   @Post('project/:projectId')
-  createInitial(@Param('projectId') projectId: string, @Body() body: { version?: string }) {
-    return this.requisitionsService.createInitialRequisition(projectId, body?.version);
+  createInitial(@Req() req: any, @Param('projectId') projectId: string, @Body() body: { version?: string }) {
+    return this.requisitionsService.createInitialRequisition(req.user.id, projectId, body?.version);
   }
 
   @Roles(Role.QUANTIFIER, Role.ADMIN)
   @Post(':id/snapshot')
-  createSnapshot(@Param('id') existingId: string, @Body() body: { version?: string }) {
-    return this.requisitionsService.createSnapshot(existingId, body?.version);
+  createSnapshot(@Req() req: any, @Param('id') existingId: string, @Body() body: { version?: string }) {
+    return this.requisitionsService.createSnapshot(req.user.id, existingId, body?.version);
   }
 
   @Roles(Role.QUANTIFIER, Role.ADMIN)
   @Put(':id/version')
-  updateVersion(@Param('id') id: string, @Body() body: { version: string }) {
-    return this.requisitionsService.updateVersion(id, body.version);
+  updateVersion(@Req() req: any, @Param('id') id: string, @Body() body: { version: string }) {
+    return this.requisitionsService.updateVersion(req.user.id, id, body.version);
   }
 
   @Roles(Role.QUANTIFIER, Role.ADMIN)
   @Put(':id/complete')
-  completeRequisition(@Param('id') id: string, @Body() body: { currentLock: number }) {
-    return this.requisitionsService.completeRequisition(id, body.currentLock);
+  completeRequisition(@Req() req: any, @Param('id') id: string, @Body() body: { currentLock: number }) {
+    return this.requisitionsService.completeRequisition(req.user.id, id, body.currentLock);
   }
 
   @Roles(Role.QUANTIFIER, Role.MANAGER, Role.AUDITOR, Role.ADMIN)
@@ -65,7 +65,7 @@ export class RequisitionsController {
     @Body() body: { configs: Array<{ fieldId: string; value: string }> },
     @Req() req: any,
   ) {
-    return this.requisitionsService.upsertProjectConfigs(reqId, body?.configs ?? [], req?.user?.role);
+    return this.requisitionsService.upsertProjectConfigs(req.user.id, reqId, body?.configs ?? [], req?.user?.role);
   }
 
   @Roles(Role.QUANTIFIER, Role.ADMIN)
@@ -125,7 +125,7 @@ export class RequisitionsController {
 
   @Roles(Role.ADMIN)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.requisitionsService.remove(id);
+  remove(@Req() req: any, @Param('id') id: string) {
+    return this.requisitionsService.remove(req.user.id, id);
   }
 }

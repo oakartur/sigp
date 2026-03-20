@@ -14,7 +14,8 @@ import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { UsersModule } from './users/users.module';
 import { ComputerAreasModule } from './computer-areas/computer-areas.module';
 import { BackofficeScalesModule } from './backoffice-scales/backoffice-scales.module';
-import { UnitCostsModule } from './unit-costs/unit-costs.module';
+import { SystemLogsModule } from './system-logs/system-logs.module';
+import { BackupsModule } from './backups/backups.module';
 
 @Module({
   imports: [
@@ -38,8 +39,9 @@ import { UnitCostsModule } from './unit-costs/unit-costs.module';
     ComputerAreasModule,
     BackofficeScalesModule,
     SystemSettingsModule,
-    UnitCostsModule,
     UsersModule,
+    SystemLogsModule,
+    BackupsModule,
   ],
 })
 export class AppModule {}

@@ -53,6 +53,7 @@ interface EquipmentCatalog {
   autoConfigFieldId?: string | null;
   autoMultiplier: number;
   autoFormulaExpression?: string | null;
+  cost: number;
   isActive: boolean;
 }
 
@@ -82,6 +83,7 @@ type EquipmentDialogState = {
   autoConfigFieldId: string;
   autoMultiplier: string;
   autoFormulaExpression: string;
+  cost: string;
 };
 
 type FormulaValidation = {
@@ -118,6 +120,7 @@ export default function CatalogsConfig() {
     autoConfigFieldId: '',
     autoMultiplier: '1',
     autoFormulaExpression: '',
+    cost: '0',
   });
   const [formulaContext, setFormulaContext] = useState<Record<string, string>>({});
   const [formulaValidation, setFormulaValidation] = useState<FormulaValidation | null>(null);
@@ -307,6 +310,7 @@ export default function CatalogsConfig() {
         autoConfigFieldId: equipmentDialog.autoConfigFieldId || null,
         autoMultiplier: Number(equipmentDialog.autoMultiplier || 1),
         autoFormulaExpression: equipmentDialog.autoFormulaExpression.trim() || null,
+        cost: Number(equipmentDialog.cost.replace(',', '.') || 0),
       };
       if (equipmentDialog.id) {
         await api.put(`/catalog/equipments/${equipmentDialog.id}`, payload);
@@ -321,6 +325,7 @@ export default function CatalogsConfig() {
         autoConfigFieldId: '',
         autoMultiplier: '1',
         autoFormulaExpression: '',
+        cost: '0',
       });
       resetFormulaTester();
       await fetchData();
@@ -455,9 +460,10 @@ export default function CatalogsConfig() {
             <Button
               variant="outlined"
               color="primary"
-              onClick={() => navigate('/settings/catalogs/unit-costs')}
+              startIcon={<ComputerIcon />}
+              onClick={() => navigate('/settings/catalogs/computer-areas')}
             >
-              Custo Unitário
+              Áreas de computadores
             </Button>
             <Button
               variant="outlined"
@@ -593,6 +599,7 @@ export default function CatalogsConfig() {
                                 autoConfigFieldId: '',
                                 autoMultiplier: '1',
                                 autoFormulaExpression: '',
+                                cost: '0',
                               });
                             }}
                           >
@@ -627,6 +634,7 @@ export default function CatalogsConfig() {
                             <TableCell>Auto por Campo Config.</TableCell>
                             <TableCell align="right">Multiplicador</TableCell>
                             <TableCell>Fórmula Auto</TableCell>
+                            <TableCell align="right">Custo Unit.</TableCell>
                             <TableCell align="right">Ações</TableCell>
                           </TableRow>
                         </TableHead>
@@ -651,6 +659,9 @@ export default function CatalogsConfig() {
                                 <TableCell align="right">{equipment.autoMultiplier}</TableCell>
                                 <TableCell>{equipment.autoFormulaExpression || '-'}</TableCell>
                                 <TableCell align="right">
+                                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(equipment.cost || 0)}
+                                </TableCell>
+                                <TableCell align="right">
                                   <IconButton
                                     color="primary"
                                     size="small"
@@ -666,6 +677,7 @@ export default function CatalogsConfig() {
                                         autoConfigFieldId: equipment.autoConfigFieldId || '',
                                         autoMultiplier: String(equipment.autoMultiplier ?? 1),
                                         autoFormulaExpression: equipment.autoFormulaExpression || '',
+                                        cost: String(equipment.cost ?? 0).replace('.', ','),
                                       });
                                     }}
                                   >
@@ -752,6 +764,7 @@ export default function CatalogsConfig() {
             autoConfigFieldId: '',
             autoMultiplier: '1',
             autoFormulaExpression: '',
+            cost: '0',
           });
         }}
         maxWidth="sm"
@@ -798,6 +811,17 @@ export default function CatalogsConfig() {
               label="Multiplicador do Auto"
               type="number"
               value={equipmentDialog.autoMultiplier}
+              onChange={(e) => setEquipmentDialog((prev) => ({ ...prev, autoMultiplier: e.target.value }))}
+              fullWidth
+            />
+            <TextField
+              label="Custo Unitário"
+              value={equipmentDialog.cost}
+              onChange={(e) => setEquipmentDialog((prev) => ({ ...prev, cost: e.target.value }))}
+              fullWidth
+            />
+            <TextField
+              label="Expressão Lógica p/ Opcionais Múltiplos"
               onChange={(e) => setEquipmentDialog((prev) => ({ ...prev, autoMultiplier: e.target.value }))}
               fullWidth
             />
@@ -939,6 +963,7 @@ export default function CatalogsConfig() {
                 autoConfigFieldId: '',
                 autoMultiplier: '1',
                 autoFormulaExpression: '',
+                cost: '0',
               });
             }}
           >

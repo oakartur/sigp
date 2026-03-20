@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Delete, Req } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -12,8 +12,8 @@ export class ProjectsController {
 
   @Roles(Role.QUANTIFIER, Role.ADMIN)
   @Post()
-  create(@Body() body: { name: string }) {
-    return this.projectsService.create(body);
+  create(@Body() body: { name: string }, @Req() req: any) {
+    return this.projectsService.create(req.user.id, body);
   }
 
   @Roles(Role.QUANTIFIER, Role.ADMIN, Role.MANAGER, Role.AUDITOR)
@@ -30,7 +30,7 @@ export class ProjectsController {
 
   @Roles(Role.ADMIN)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.projectsService.remove(id);
+  remove(@Param('id') id: string, @Req() req: any) {
+    return this.projectsService.remove(req.user.id, id);
   }
 }

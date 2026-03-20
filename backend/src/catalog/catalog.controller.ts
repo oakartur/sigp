@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   Put,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -80,6 +81,7 @@ export class CatalogController {
   @Roles(Role.ADMIN)
   @Post('equipments')
   createEquipment(
+    @Req() req: any,
     @Body()
     body: {
       operationId: string;
@@ -89,14 +91,16 @@ export class CatalogController {
       autoConfigFieldId?: string | null;
       autoMultiplier?: number;
       autoFormulaExpression?: string | null;
+      cost?: number;
     },
   ) {
-    return this.catalogService.createEquipment(body);
+    return this.catalogService.createEquipment(req.user.id, body);
   }
 
   @Roles(Role.ADMIN)
   @Put('equipments/:id')
   updateEquipment(
+    @Req() req: any,
     @Param('id') id: string,
     @Body()
     body: {
@@ -106,26 +110,27 @@ export class CatalogController {
       autoConfigFieldId?: string | null;
       autoMultiplier?: number;
       autoFormulaExpression?: string | null;
+      cost?: number;
       isActive?: boolean;
     },
   ) {
-    return this.catalogService.updateEquipment(id, body);
+    return this.catalogService.updateEquipment(req.user.id, id, body);
   }
 
   @Roles(Role.ADMIN)
   @Delete('equipments/:id')
-  removeEquipment(@Param('id') id: string) {
-    return this.catalogService.removeEquipment(id);
+  removeEquipment(@Req() req: any, @Param('id') id: string) {
+    return this.catalogService.removeEquipment(req.user.id, id);
   }
 
   @Roles(Role.ADMIN)
   @Post('import')
   @UseInterceptors(FileInterceptor('file'))
-  importCatalog(@UploadedFile() file: any) {
+  importCatalog(@Req() req: any, @UploadedFile() file: any) {
     if (!file || !file.buffer) {
       throw new BadRequestException('Arquivo nao enviado.');
     }
-    return this.catalogService.importCatalog(file.originalname || 'catalog.csv', file.buffer);
+    return this.catalogService.importCatalog(req.user.id, file.originalname || 'catalog.csv', file.buffer);
   }
 
   @Roles(Role.ADMIN)

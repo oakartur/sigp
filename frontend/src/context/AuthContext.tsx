@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useState, useEffect, useContext, type ReactNode } from 'react';
 import axios from 'axios';
 
 interface User {
@@ -15,6 +15,7 @@ interface AuthContextType {
 }
 
 export const AuthContext = createContext<AuthContextType>({} as AuthContextType);
+export const useAuth = () => useContext(AuthContext);
 
 // Configuração base do Axios
 // Em produção (nginx proxy): VITE_API_URL=/sigp-api

@@ -12,12 +12,27 @@ export class RolesGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-    if (!requiredRoles) {
-      return true;
-    }
+
     const { user } = context.switchToHttp().getRequest();
     if (!user) throw new UnauthorizedException('User not found in context.');
 
-    return requiredRoles.includes(user.role) || user.role === Role.ADMIN;
+    // O Desenvolvedor pode acessar tudo
+    if (user.role === Role.DEVELOPER) {
+      return true;
+    }
+
+    if (!requiredRoles || requiredRoles.length === 0) {
+      return true;
+    }
+
+    // O ADMIN pode acessar tudo, a não ser que a rota seja estritamente para DEVELOPER
+    if (user.role === Role.ADMIN) {
+      if (requiredRoles.length === 1 && requiredRoles[0] === Role.DEVELOPER) {
+        return false;
+      }
+      return true;
+    }
+
+    return requiredRoles.includes(user.role);
   }
 }

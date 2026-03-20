@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FormulasService } from '../formulas/formulas.service';
+import { SystemLogsService } from '../system-logs/system-logs.service';
 import {
   Prisma,
   ProjectHeaderFieldType,
@@ -35,6 +36,7 @@ export class RequisitionsService {
   constructor(
     private prisma: PrismaService,
     private formulasService: FormulasService,
+    private systemLogsService: SystemLogsService,
   ) {}
 
   private isMissingBackofficeScaleTable(error: unknown): boolean {
@@ -1291,7 +1293,7 @@ export class RequisitionsService {
     }
   }
 
-  async createInitialRequisition(projectId: string, version?: string) {
+  async createInitialRequisition(userId: string, projectId: string, version?: string) {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Projeto nao encontrado.');
 
@@ -1326,10 +1328,13 @@ export class RequisitionsService {
         }`,
       );
     }
+    
+    await this.systemLogsService.logAction(userId, 'CREATE', 'REQUISITION', requisition.id, null, { version: requisition.version, status: requisition.status, projectId });
+    
     return requisition;
   }
 
-  async completeRequisition(id: string, currentLock: number) {
+  async completeRequisition(userId: string, id: string, currentLock: number) {
     const req = await this.prisma.requisition.findUnique({ where: { id } });
     if (!req) throw new BadRequestException('Requisicao nao encontrada.');
     if (req.versionLock !== currentLock) {
@@ -1347,11 +1352,12 @@ export class RequisitionsService {
       });
 
       await this.syncRequisitionStatusWithProjectConfig(tx, id);
+      await this.systemLogsService.logAction(userId, 'UPDATE', 'REQUISITION', id, { status: req.status }, { status: 'COMPLETED' });
       return updated;
     });
   }
 
-  async createSnapshot(existingId: string, version?: string) {
+  async createSnapshot(userId: string, existingId: string, version?: string) {
     const req = await this.prisma.requisition.findUnique({
       where: { id: existingId },
       include: { items: true },
@@ -1416,10 +1422,13 @@ export class RequisitionsService {
         }`,
       );
     }
+    
+    await this.systemLogsService.logAction(userId, 'CREATE', 'REQUISITION', newReq.id, { snapshotOf: existingId }, { version: newReq.version });
+    
     return newReq;
   }
 
-  async updateVersion(id: string, version: string) {
+  async updateVersion(userId: string, id: string, version: string) {
     const normalizedVersion = version?.trim();
     if (!normalizedVersion) {
       throw new BadRequestException('Versao e obrigatoria.');
@@ -1428,13 +1437,17 @@ export class RequisitionsService {
     const requisition = await this.prisma.requisition.findUnique({ where: { id } });
     if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
 
-    return this.prisma.requisition.update({
+    const updated = await this.prisma.requisition.update({
       where: { id },
       data: {
         version: normalizedVersion,
         versionLock: { increment: 1 },
       },
     });
+
+    await this.systemLogsService.logAction(userId, 'UPDATE', 'REQUISITION', id, { version: requisition.version }, { version: normalizedVersion });
+    
+    return updated;
   }
 
   async findItems(reqId: string) {
@@ -1481,7 +1494,7 @@ export class RequisitionsService {
     });
   }
 
-  async upsertProjectConfigs(reqId: string, configs: Array<{ fieldId: string; value: string }>, actorRole?: Role) {
+  async upsertProjectConfigs(userId: string, reqId: string, configs: Array<{ fieldId: string; value: string }>, actorRole?: Role) {
     const requisition = await this.prisma.requisition.findUnique({ where: { id: reqId } });
     if (!requisition) throw new NotFoundException('Requisicao nao encontrada.');
     if (requisition.isReadOnly) {
@@ -1519,7 +1532,7 @@ export class RequisitionsService {
       }
     }
 
-    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const result = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await this.syncProjectConfigs(tx, reqId);
 
       const fieldIds = Array.from(new Set(configs.map((config) => config.fieldId).filter(Boolean)));
@@ -1984,7 +1997,7 @@ export class RequisitionsService {
     });
   }
 
-  async remove(id: string) {
+  async remove(userId: string, id: string) {
     const requisition = await this.prisma.requisition.findUnique({
       where: { id },
       select: { id: true, projectId: true },
@@ -1999,9 +2012,13 @@ export class RequisitionsService {
       await tx.requisition.delete({ where: { id } });
     });
 
-    return {
+    const result = {
       deletedRequisitionId: id,
       projectId: requisition.projectId,
     };
+    
+    await this.systemLogsService.logAction(userId, 'DELETE', 'REQUISITION', id, requisition as any, null);
+    
+    return result;
   }
 }

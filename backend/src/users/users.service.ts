@@ -94,6 +94,7 @@ export class UsersService {
       return await this.prisma.user.create({
         data: {
           email,
+          name: email.split('@')[0],
           role,
           passwordHash,
         },

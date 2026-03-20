@@ -12,13 +12,19 @@ enum Role {
   MANAGER
   AUDITOR
   ADMIN
+  DEVELOPER
 }
 
 model User {
-  id           String @id @default(uuid())
-  email        String @unique
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
   passwordHash String
-  role         Role   @default(QUANTIFIER)
+  role         Role      @default(QUANTIFIER)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  systemLogs   SystemLog[]
 }
 
 model Formula {
@@ -212,6 +218,7 @@ model EquipmentCatalog {
   autoConfigField   ProjectHeaderField? @relation(fields: [autoConfigFieldId], references: [id], onDelete: SetNull)
   autoMultiplier    Float               @default(1)
   autoFormulaExpression String?
+  cost              Float               @default(0)
   sortOrder         Int                 @default(0)
   isActive          Boolean             @default(true)
   createdAt         DateTime            @default(now())
@@ -229,11 +236,18 @@ enum ProjectHeaderFieldType {
   COMPUTED
 }
 
-model EquipmentUnitCost {
+model SystemLog {
   id          String   @id @default(uuid())
-  code        String   @unique
-  description String
-  cost        Float    @default(0)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String   // CREATE, UPDATE, DELETE
+  entityType  String   // PROJECT, REQUISITION, EQUIPMENT, etc
+  entityId    String
+  oldValue    Json?
+  newValue    Json?
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  @@index([entityType])
+  @@index([userId])
 }
+

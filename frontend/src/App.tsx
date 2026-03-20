@@ -9,9 +9,10 @@ import ProjectHeaderConfig from './pages/ProjectHeaderConfig';
 import CatalogsConfig from './pages/CatalogsConfig';
 import SystemSettings from './pages/SystemSettings';
 import UsersSettings from './pages/UsersSettings';
+import SystemLogs from './pages/SystemLogs';
+import SystemBackups from './pages/SystemBackups';
 import ComputerAreasConfig from './pages/ComputerAreasConfig';
 import BackofficeScalesConfig from './pages/BackofficeScalesConfig';
-import UnitCostsConfig from './pages/UnitCostsConfig';
 import PrivateRoute from './components/PrivateRoute';
 
 const theme = createTheme({
@@ -206,6 +207,24 @@ function App() {
             />
 
             <Route
+              path="/settings/logs"
+              element={
+                <PrivateRoute allowedRoles={['DEVELOPER']}>
+                  <SystemLogs />
+                </PrivateRoute>
+              }
+            />
+
+            <Route
+              path="/settings/backups"
+              element={
+                <PrivateRoute allowedRoles={['DEVELOPER']}>
+                  <SystemBackups />
+                </PrivateRoute>
+              }
+            />
+
+            <Route
               path="/settings/catalogs/computer-areas"
               element={
                 <PrivateRoute allowedRoles={['ADMIN']}>
@@ -223,18 +242,8 @@ function App() {
               }
             />
 
-            <Route
-              path="/settings/catalogs/unit-costs"
-              element={
-                <PrivateRoute allowedRoles={['ADMIN']}>
-                  <UnitCostsConfig />
-                </PrivateRoute>
-              }
-            />
-
             <Route path="/settings/computer-areas" element={<Navigate to="/settings/catalogs/computer-areas" replace />} />
             <Route path="/settings/backoffice-scales" element={<Navigate to="/settings/catalogs/backoffice-scales" replace />} />
-            <Route path="/settings/unit-costs" element={<Navigate to="/settings/catalogs/unit-costs" replace />} />
 
             <Route
               path="/settings/header-fields"

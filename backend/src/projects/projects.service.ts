@@ -1,12 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SystemLogsService } from '../system-logs/system-logs.service';
 
 @Injectable()
 export class ProjectsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private systemLogsService: SystemLogsService) {}
 
-  async create(data: { name: string }) {
-    return this.prisma.project.create({ data });
+  async create(userId: string, data: { name: string }) {
+    const project = await this.prisma.project.create({ data });
+    await this.systemLogsService.logAction(userId, 'CREATE', 'PROJECT', project.id, null, project as any);
+    return project;
   }
 
   async findAll() {
@@ -24,16 +27,16 @@ export class ProjectsService {
     });
   }
 
-  async remove(id: string) {
+  async remove(userId: string, id: string) {
     const existing = await this.prisma.project.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!existing) {
       throw new NotFoundException('Projeto nao encontrado.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const requisitions = await tx.requisition.findMany({
         where: { projectId: id },
         select: { id: true },
@@ -59,5 +62,9 @@ export class ProjectsService {
         deletedRequisitions: requisitionIds.length,
       };
     });
+
+    await this.systemLogsService.logAction(userId, 'DELETE', 'PROJECT', id, existing as any, null);
+
+    return result;
   }
 }

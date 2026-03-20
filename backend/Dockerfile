@@ -4,7 +4,7 @@ WORKDIR /usr/src/app
 
 COPY package*.json ./
 
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl postgresql-client
 
 RUN npm ci --ignore-scripts
 

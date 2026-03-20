@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SystemLogsService } from '../system-logs/system-logs.service';
 import * as ExcelJS from 'exceljs';
 import * as math from 'mathjs';
 
@@ -8,11 +9,12 @@ type ImportRow = {
   operation: string;
   code: string;
   description: string;
+  cost: number;
 };
 
 @Injectable()
 export class CatalogService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private readonly systemLogsService: SystemLogsService) {}
 
   private normalizeKey(value: string): string {
     return value
@@ -425,12 +427,13 @@ export class CatalogService {
       'Descrição',
       'Equipamento',
     ]);
+    const costIdx = findIndex(['Custo Unitario', 'Custo Unitário', 'Custo']);
 
     if (localIdx < 0 || operationIdx < 0 || descriptionIdx < 0) {
       return null;
     }
 
-    return { localIdx, operationIdx, codeIdx, descriptionIdx } as const;
+    return { localIdx, operationIdx, codeIdx, descriptionIdx, costIdx } as const;
   }
 
   private parseCsvContent(contentRaw: string): ImportRow[] {
@@ -479,6 +482,7 @@ export class CatalogService {
         operation: this.normalizeNullable(cols[indexes.operationIdx] || ''),
         code: this.normalizeCode(indexes.codeIdx >= 0 ? cols[indexes.codeIdx] || '' : ''),
         description: this.normalizeNullable(cols[indexes.descriptionIdx] || ''),
+        cost: indexes.costIdx >= 0 ? Number(this.normalizeNullable(cols[indexes.costIdx] || '0').replace(',', '.')) || 0 : 0,
       });
     }
 
@@ -540,10 +544,12 @@ export class CatalogService {
       const operation = this.normalizeNullable(values[indexes.operationIdx] || '');
       const code = this.normalizeCode(indexes.codeIdx >= 0 ? values[indexes.codeIdx] || '' : '');
       const description = this.normalizeNullable(values[indexes.descriptionIdx] || '');
+      const costRaw = indexes.costIdx >= 0 ? values[indexes.costIdx] : '0';
+      const cost = Number(this.normalizeNullable(costRaw).replace(',', '.')) || 0;
 
       if (!local && !operation && !description && !code) continue;
 
-      rows.push({ local, operation, code, description });
+      rows.push({ local, operation, code, description, cost });
     }
 
     return rows;
@@ -560,7 +566,7 @@ export class CatalogService {
     throw new BadRequestException('Formato nao suportado. Use CSV ou XLSX.');
   }
 
-  async importCatalog(fileName: string, buffer: Buffer) {
+  async importCatalog(userId: string, fileName: string, buffer: Buffer) {
     const rows = await this.parseImportRows(fileName, buffer);
     if (rows.length === 0) {
       throw new BadRequestException('Arquivo sem dados validos para importacao.');
@@ -684,6 +690,7 @@ export class CatalogService {
               baseQuantity: 0,
               autoConfigFieldId: null,
               autoMultiplier: 1,
+              cost: row.cost,
               sortOrder: (maxEquipmentOrder._max.sortOrder ?? -1) + 1,
               isActive: true,
             },
@@ -695,6 +702,7 @@ export class CatalogService {
             data: {
               code: row.code || equipment.code || '',
               description: row.description,
+              cost: row.cost || equipment.cost,
               isActive: true,
             },
           });
@@ -706,7 +714,7 @@ export class CatalogService {
       }
     }
 
-    return {
+    const result = {
       rowsProcessed: rows.length,
       rowsSkipped,
       duplicatesSkipped,
@@ -716,6 +724,10 @@ export class CatalogService {
       equipmentsUpdated,
       errors: errors.slice(0, 50),
     };
+
+    await this.systemLogsService.logAction(userId, 'BATCH_UPDATE', 'EQUIPMENT', 'CSV_IMPORT', null, result as any);
+
+    return result;
   }
 
   async getTree() {
@@ -860,7 +872,7 @@ export class CatalogService {
     return this.prisma.operationCatalog.delete({ where: { id } });
   }
 
-  async createEquipment(data: {
+  async createEquipment(userId: string, data: {
     operationId: string;
     code: string;
     description: string;
@@ -868,6 +880,7 @@ export class CatalogService {
     autoConfigFieldId?: string | null;
     autoMultiplier?: number;
     autoFormulaExpression?: string | null;
+    cost?: number;
   }) {
     const code = data?.code?.trim() || '';
     const description = data?.description?.trim();
@@ -892,7 +905,7 @@ export class CatalogService {
     });
     const nextOrder = (maxOrder._max.sortOrder ?? -1) + 1;
 
-    return this.prisma.equipmentCatalog.create({
+    const equipment = await this.prisma.equipmentCatalog.create({
       data: {
         operationId: data.operationId,
         code,
@@ -901,6 +914,7 @@ export class CatalogService {
         autoConfigFieldId: data.autoConfigFieldId || null,
         autoMultiplier: Number(data.autoMultiplier ?? 1),
         autoFormulaExpression: normalizedAutoFormula,
+        cost: Number(data.cost ?? 0),
         sortOrder: nextOrder,
         isActive: true,
       },
@@ -910,9 +924,14 @@ export class CatalogService {
         },
       },
     });
+
+    await this.systemLogsService.logAction(userId, 'CREATE', 'EQUIPMENT', equipment.id, null, equipment as any);
+
+    return equipment;
   }
 
   async updateEquipment(
+    userId: string,
     id: string,
     data: {
       code?: string;
@@ -921,6 +940,7 @@ export class CatalogService {
       autoConfigFieldId?: string | null;
       autoMultiplier?: number;
       autoFormulaExpression?: string | null;
+      cost?: number;
       isActive?: boolean;
     },
   ) {
@@ -960,9 +980,10 @@ export class CatalogService {
     if (data.autoConfigFieldId !== undefined) payload.autoConfigFieldId = data.autoConfigFieldId || null;
     if (typeof data.autoMultiplier === 'number') payload.autoMultiplier = Number(data.autoMultiplier);
     if (normalizedAutoFormula !== undefined) payload.autoFormulaExpression = normalizedAutoFormula;
+    if (typeof data.cost === 'number') (payload as any).cost = Number(data.cost);
     if (typeof data.isActive === 'boolean') payload.isActive = data.isActive;
 
-    return this.prisma.equipmentCatalog.update({
+    const equipment = await this.prisma.equipmentCatalog.update({
       where: { id },
       data: payload,
       include: {
@@ -971,6 +992,10 @@ export class CatalogService {
         },
       },
     });
+
+    await this.systemLogsService.logAction(userId, 'UPDATE', 'EQUIPMENT', id, current as any, equipment as any);
+
+    return equipment;
   }
 
   private normalizeFieldAlias(label: string): string {
@@ -1337,10 +1362,13 @@ export class CatalogService {
     };
   }
 
-  async removeEquipment(id: string) {
+  async removeEquipment(userId: string, id: string) {
     const current = await this.prisma.equipmentCatalog.findUnique({ where: { id } });
     if (!current) throw new NotFoundException('Equipamento nao encontrado.');
 
-    return this.prisma.equipmentCatalog.delete({ where: { id } });
+    await this.prisma.equipmentCatalog.delete({ where: { id } });
+    await this.systemLogsService.logAction(userId, 'DELETE', 'EQUIPMENT', id, current as any, null);
+    
+    return current;
   }
 }

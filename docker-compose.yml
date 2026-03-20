@@ -4,10 +4,7 @@ services:
   # ---------------------------------------------------------
   postgres-db:
     image: postgres:15-alpine
-    container_name: quant_db
     restart: unless-stopped
-    ports:
-      - "5432:5432"
     command: >-
       postgres
       -c wal_level=replica
@@ -32,7 +29,6 @@ services:
 
   redis-queue:
     image: redis:7-alpine
-    container_name: quant_redis
     restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
@@ -53,7 +49,6 @@ services:
     build:
       context: ./ops/backup
       dockerfile: Dockerfile
-    container_name: quant_db_maintenance
     restart: unless-stopped
     depends_on:
       postgres-db:
@@ -104,7 +99,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: quant_api
     restart: unless-stopped
     depends_on:
       postgres-db:
@@ -121,7 +115,9 @@ services:
       - ALLOW_PUBLIC_REGISTER=${ALLOW_PUBLIC_REGISTER:-false}
       - JWT_SECRET=${JWT_SECRET}
     ports:
-      - "3000:3000"
+      - "${API_PORT:-3000}:3000"
+    volumes:
+      - db_backups:/backups:ro
     command: npm run start:prod
     healthcheck:
       test: ["CMD", "node", "-e", "const net=require('net');const s=net.connect(3000,'127.0.0.1');s.on('connect',()=>process.exit(0));s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),3000);"]
@@ -136,7 +132,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: quant_worker
     restart: unless-stopped
     depends_on:
       postgres-db:
@@ -166,10 +161,9 @@ services:
       dockerfile: Dockerfile
       args:
         - VITE_API_URL=/sigp-api
-    container_name: quant_frontend
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "${FRONTEND_PORT:-8080}:80"
     depends_on:
       api-server:
         condition: service_healthy
