@@ -95,7 +95,7 @@ export default function Login() {
               </Box>
 
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Chip label="Catalogo tecnico" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#FFFFFF' }} />
+                <Chip label="Catálogo técnico" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#FFFFFF' }} />
                 <Chip label="Versionamento" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#FFFFFF' }} />
                 <Chip label="Rastreabilidade" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#FFFFFF' }} />
               </Stack>

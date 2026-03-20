@@ -75,7 +75,7 @@ export default function BackofficeScalesConfig() {
       setAreas(response.data || []);
     } catch (error) {
       console.error('Failed to fetch backoffice scales catalog', error);
-      alert(parseApiErrorMessage(error, 'Erro ao carregar catalogo de balancas retaguarda.'));
+      alert(parseApiErrorMessage(error, 'Erro ao carregar catálogo de balanças retaguarda.'));
     } finally {
       setLoading(false);
     }
@@ -145,7 +145,7 @@ export default function BackofficeScalesConfig() {
       await fetchData();
     } catch (error) {
       console.error('Failed to save backoffice scale area', error);
-      alert(parseApiErrorMessage(error, 'Erro ao salvar area de balancas retaguarda.'));
+      alert(parseApiErrorMessage(error, 'Erro ao salvar área de balanças retaguarda.'));
     } finally {
       setSaving(false);
     }
@@ -153,7 +153,7 @@ export default function BackofficeScalesConfig() {
 
   const removeArea = async (area: BackofficeScaleArea) => {
     const confirmed = window.confirm(
-      `Desativar a area "${area.name}"?\n\nEla deixara de aparecer em novas requisicoes.`,
+      `Desativar a área "${area.name}"?\n\nEla deixará de aparecer em novas requisições.`,
     );
     if (!confirmed) return;
 
@@ -162,7 +162,7 @@ export default function BackofficeScalesConfig() {
       await fetchData();
     } catch (error) {
       console.error('Failed to remove backoffice scale area', error);
-      alert(parseApiErrorMessage(error, 'Erro ao desativar area de balancas retaguarda.'));
+      alert(parseApiErrorMessage(error, 'Erro ao desativar área de balanças retaguarda.'));
     }
   };
 
@@ -174,10 +174,10 @@ export default function BackofficeScalesConfig() {
             <ArrowBackIcon />
           </IconButton>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            Catalogo de Areas de Balancas Retaguarda
+            Catálogo de Áreas de Balanças Retaguarda
           </Typography>
           <Button variant="contained" startIcon={<AddIcon />} onClick={openCreateDialog}>
-            Nova area
+            Nova área
           </Button>
         </Toolbar>
       </AppBar>
@@ -185,7 +185,7 @@ export default function BackofficeScalesConfig() {
       <Container maxWidth="lg" sx={{ py: 3 }}>
         <Paper sx={{ p: 2, mb: 2 }}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
-            <Chip label={`Total de areas: ${summary.total}`} color="primary" variant="outlined" />
+            <Chip label={`Total de áreas: ${summary.total}`} color="primary" variant="outlined" />
             <Chip label={`Ativas: ${summary.active}`} color="success" variant="outlined" />
             <Chip label={`Inativas: ${summary.inactive}`} color="default" variant="outlined" />
           </Stack>
@@ -198,17 +198,17 @@ export default function BackofficeScalesConfig() {
             </Box>
           ) : areas.length === 0 ? (
             <Box sx={{ p: 4, textAlign: 'center' }}>
-              <Typography color="text.secondary">Nenhuma area cadastrada.</Typography>
+              <Typography color="text.secondary">Nenhuma área cadastrada.</Typography>
             </Box>
           ) : (
             <Table size="small">
               <TableHead>
                 <TableRow>
                   <TableCell width={110}>Ordem</TableCell>
-                  <TableCell>Area</TableCell>
+                  <TableCell>Área</TableCell>
                   <TableCell width={140}>Status</TableCell>
                   <TableCell align="right" width={120}>
-                    Acoes
+                    Ações
                   </TableCell>
                 </TableRow>
               </TableHead>
@@ -242,18 +242,18 @@ export default function BackofficeScalesConfig() {
       </Container>
 
       <Dialog open={dialog.open} onClose={closeDialog} maxWidth="xs" fullWidth>
-        <DialogTitle>{dialog.id ? 'Editar area' : 'Nova area'}</DialogTitle>
+        <DialogTitle>{dialog.id ? 'Editar área' : 'Nova área'}</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ pt: 1 }}>
             <TextField
               autoFocus
-              label="Nome da area"
+              label="Nome da área"
               value={dialog.name}
               onChange={(event) => setDialog((prev) => ({ ...prev, name: event.target.value }))}
               fullWidth
             />
             <TextField
-              label="Ordem de exibicao"
+              label="Ordem de exibição"
               type="number"
               value={dialog.sortOrder}
               onChange={(event) => setDialog((prev) => ({ ...prev, sortOrder: event.target.value }))}

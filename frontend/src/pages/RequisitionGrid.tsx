@@ -205,7 +205,7 @@ export default function RequisitionGrid() {
       setAutoSyncError(null);
       setLastAutoSyncAt(Date.now());
     } catch (error) {
-      const message = parseApiErrorMessage(error, 'Erro ao recalcular quantidades automaticas.');
+      const message = parseApiErrorMessage(error, 'Erro ao recalcular quantidades automáticas.');
       setAutoSyncError(message);
     } finally {
       setAutoFilling(false);
@@ -369,7 +369,7 @@ export default function RequisitionGrid() {
         );
         hasSuccessfulBackofficeScaleAreaUpdate = true;
       } catch (error) {
-        const message = parseApiErrorMessage(error, 'Erro ao salvar quantidade de balancas retaguarda.');
+        const message = parseApiErrorMessage(error, 'Erro ao salvar quantidade de balanças retaguarda.');
         setBackofficeScaleAreaSyncError(message);
       }
     }
@@ -435,7 +435,7 @@ export default function RequisitionGrid() {
       await runAutoFill();
     } catch (error) {
       console.error('Failed to auto sync project configuration', error);
-      const message = parseApiErrorMessage(error, 'Erro na sincronizacao automatica.');
+      const message = parseApiErrorMessage(error, 'Erro na sincronização automática.');
       setAutoSyncError(message);
     } finally {
       setSavingConfigs(false);
@@ -528,7 +528,7 @@ export default function RequisitionGrid() {
       setRowSelectionModel({ type: 'include', ids: new Set() });
     } catch (error) {
       console.error('Failed to fetch requisition data', error);
-      const errorMessage = parseApiErrorMessage(error, 'Erro ao carregar requisicao.');
+      const errorMessage = parseApiErrorMessage(error, 'Erro ao carregar requisição.');
       alert(errorMessage);
     } finally {
       setLoading(false);
@@ -646,8 +646,8 @@ export default function RequisitionGrid() {
 
   const columns: GridColDef[] = [
     { field: 'localName', headerName: 'Local', width: 180 },
-    { field: 'operationName', headerName: 'Operacao', width: 200 },
-    { field: 'equipmentCode', headerName: 'Codigo', width: 130 },
+    { field: 'operationName', headerName: 'Operação', width: 200 },
+    { field: 'equipmentCode', headerName: 'Código', width: 130 },
     { field: 'equipmentName', headerName: 'Equipamento', flex: 1, minWidth: 280 },
     {
       field: 'manualQuantity',
@@ -746,7 +746,7 @@ export default function RequisitionGrid() {
 
     const value = normalizeManualQuantity(bulkQuantity);
     if (bulkQuantity.trim() && value === null) {
-      alert('Informe uma quantidade numerica valida para aplicar em lote.');
+      alert('Informe uma quantidade numérica válida para aplicar em lote.');
       return;
     }
 

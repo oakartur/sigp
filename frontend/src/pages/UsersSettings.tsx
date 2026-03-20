@@ -82,7 +82,7 @@ export default function UsersSettings() {
       setUsers(response.data || []);
     } catch (error) {
       console.error('Failed to load users', error);
-      alert(parseApiErrorMessage(error, 'Erro ao carregar usuarios.'));
+      alert(parseApiErrorMessage(error, 'Erro ao carregar usuários.'));
     } finally {
       setLoading(false);
     }
@@ -121,7 +121,7 @@ export default function UsersSettings() {
       await loadUsers();
     } catch (error) {
       console.error('Failed to create user', error);
-      alert(parseApiErrorMessage(error, 'Erro ao criar usuario.'));
+      alert(parseApiErrorMessage(error, 'Erro ao criar usuário.'));
     } finally {
       setActionLoading(false);
     }
@@ -143,14 +143,14 @@ export default function UsersSettings() {
       await loadUsers();
     } catch (error) {
       console.error('Failed to update user', error);
-      alert(parseApiErrorMessage(error, 'Erro ao atualizar usuario.'));
+      alert(parseApiErrorMessage(error, 'Erro ao atualizar usuário.'));
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleDelete = async (selected: UserRow) => {
-    const confirmed = window.confirm(`Excluir o usuario ${selected.email}?`);
+    const confirmed = window.confirm(`Excluir o usuário ${selected.email}?`);
     if (!confirmed) return;
 
     try {
@@ -159,7 +159,7 @@ export default function UsersSettings() {
       await loadUsers();
     } catch (error) {
       console.error('Failed to delete user', error);
-      alert(parseApiErrorMessage(error, 'Erro ao excluir usuario.'));
+      alert(parseApiErrorMessage(error, 'Erro ao excluir usuário.'));
     } finally {
       setActionLoading(false);
     }
@@ -173,7 +173,7 @@ export default function UsersSettings() {
             <ArrowBackIcon />
           </IconButton>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            Configuracao - Usuarios
+            Configuração - Usuários
           </Typography>
         </Toolbar>
       </AppBar>
@@ -188,10 +188,10 @@ export default function UsersSettings() {
           >
             <Box>
               <Typography variant="h5" sx={{ mb: 0.5 }}>
-                Gerenciamento de Usuarios
+                Gerenciamento de Usuários
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Criar, editar permissao e excluir usuarios do sistema.
+                Criar, editar permissão e excluir usuários do sistema.
               </Typography>
             </Box>
 
@@ -201,7 +201,7 @@ export default function UsersSettings() {
               onClick={() => setCreateDialogOpen(true)}
               disabled={actionLoading}
             >
-              Novo usuario
+              Novo usuário
             </Button>
           </Stack>
         </Paper>
@@ -216,8 +216,8 @@ export default function UsersSettings() {
               <TableHead>
                 <TableRow>
                   <TableCell>Email</TableCell>
-                  <TableCell>Permissao</TableCell>
-                  <TableCell align="right">Acoes</TableCell>
+                  <TableCell>Permissão</TableCell>
+                  <TableCell align="right">Ações</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -229,14 +229,14 @@ export default function UsersSettings() {
                     </TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
-                        <Tooltip title="Editar usuario">
+                        <Tooltip title="Editar usuário">
                           <span>
                             <IconButton size="small" color="primary" onClick={() => openEditDialog(item)} disabled={actionLoading}>
                               <EditIcon fontSize="small" />
                             </IconButton>
                           </span>
                         </Tooltip>
-                        <Tooltip title={user?.id === item.id ? 'Voce nao pode excluir seu proprio usuario' : 'Excluir usuario'}>
+                        <Tooltip title={user?.id === item.id ? 'Você não pode excluir seu próprio usuário' : 'Excluir usuário'}>
                           <span>
                             <IconButton
                               size="small"
@@ -259,7 +259,7 @@ export default function UsersSettings() {
       </Container>
 
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Novo usuario</DialogTitle>
+        <DialogTitle>Novo usuário</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ mt: 1 }}>
             <TextField
@@ -283,7 +283,7 @@ export default function UsersSettings() {
               fullWidth
               size="small"
               select
-              label="Permissao"
+              label="Permissão"
               value={createRole}
               onChange={(event) => setCreateRole(event.target.value as Role)}
             >
@@ -312,7 +312,7 @@ export default function UsersSettings() {
       </Dialog>
 
       <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Editar usuario</DialogTitle>
+        <DialogTitle>Editar usuário</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ mt: 1 }}>
             <TextField
@@ -327,7 +327,7 @@ export default function UsersSettings() {
               fullWidth
               size="small"
               select
-              label="Permissao"
+              label="Permissão"
               value={editRole}
               onChange={(event) => setEditRole(event.target.value as Role)}
             >

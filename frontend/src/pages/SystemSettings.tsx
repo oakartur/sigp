@@ -86,26 +86,26 @@ function buildImportResultMessage(data: ImportResponse): string {
   const projects = data.summary?.projectsAndActiveVersions;
 
   if (!catalog && !fields && !projects) {
-    return 'Importacao concluida.';
+    return 'Importação concluída.';
   }
 
-  const lines = ['Importacao concluida.'];
+  const lines = ['Importação concluída.'];
 
   if (catalog) {
     lines.push(
-      `Catalogo: locais +${catalog.localsCreated ?? 0}, operacoes +${catalog.operationsCreated ?? 0}, equipamentos +${catalog.equipmentsCreated ?? 0}, areas de computadores +${catalog.computerAreasCreated ?? 0}, areas de balancas +${catalog.backofficeScaleAreasCreated ?? 0}, atualizados ${catalog.updated ?? 0} (computadores ${catalog.computerAreasUpdated ?? 0}, balancas ${catalog.backofficeScaleAreasUpdated ?? 0}), ignorados ${catalog.skipped ?? 0} (computadores ${catalog.computerAreasSkipped ?? 0}, balancas ${catalog.backofficeScaleAreasSkipped ?? 0}).`,
+      `Catálogo: locais +${catalog.localsCreated ?? 0}, operações +${catalog.operationsCreated ?? 0}, equipamentos +${catalog.equipmentsCreated ?? 0}, áreas de computadores +${catalog.computerAreasCreated ?? 0}, áreas de balanças +${catalog.backofficeScaleAreasCreated ?? 0}, atualizados ${catalog.updated ?? 0} (computadores ${catalog.computerAreasUpdated ?? 0}, balanças ${catalog.backofficeScaleAreasUpdated ?? 0}), ignorados ${catalog.skipped ?? 0} (computadores ${catalog.computerAreasSkipped ?? 0}, balanças ${catalog.backofficeScaleAreasSkipped ?? 0}).`,
     );
   }
 
   if (fields) {
     lines.push(
-      `Configuracoes de Projeto: criados ${fields.created ?? 0}, atualizados ${fields.updated ?? 0}, ignorados ${fields.skipped ?? 0}.`,
+      `Configurações de Projeto: criados ${fields.created ?? 0}, atualizados ${fields.updated ?? 0}, ignorados ${fields.skipped ?? 0}.`,
     );
   }
 
   if (projects) {
     lines.push(
-      `Projetos/Versoes: projetos +${projects.projectsCreated ?? 0} (${projects.projectsUpdated ?? 0} atualizados), requisicoes +${projects.requisitionsCreated ?? 0} (${projects.requisitionsUpdated ?? 0} atualizadas), configs +${projects.projectConfigsCreated ?? 0} (${projects.projectConfigsUpdated ?? 0} atualizadas), itens +${projects.itemsCreated ?? 0} (${projects.itemsUpdated ?? 0} atualizados), areas de computadores +${projects.computerAreasCreated ?? 0} (${projects.computerAreasUpdated ?? 0} atualizadas), areas de balancas +${projects.backofficeScaleAreasCreated ?? 0} (${projects.backofficeScaleAreasUpdated ?? 0} atualizadas).`,
+      `Projetos/Versões: projetos +${projects.projectsCreated ?? 0} (${projects.projectsUpdated ?? 0} atualizados), requisições +${projects.requisitionsCreated ?? 0} (${projects.requisitionsUpdated ?? 0} atualizadas), configs +${projects.projectConfigsCreated ?? 0} (${projects.projectConfigsUpdated ?? 0} atualizadas), itens +${projects.itemsCreated ?? 0} (${projects.itemsUpdated ?? 0} atualizados), áreas de computadores +${projects.computerAreasCreated ?? 0} (${projects.computerAreasUpdated ?? 0} atualizadas), áreas de balanças +${projects.backofficeScaleAreasCreated ?? 0} (${projects.backofficeScaleAreasUpdated ?? 0} atualizadas).`,
     );
   }
 
@@ -174,7 +174,7 @@ export default function SystemSettings() {
       setExportDialogOpen(false);
     } catch (error) {
       console.error('Failed to export settings', error);
-      alert('Erro ao exportar configuracoes.');
+      alert('Erro ao exportar configurações.');
     } finally {
       setExporting(false);
     }
@@ -189,7 +189,7 @@ export default function SystemSettings() {
       parsedPayload = JSON.parse(fileContent);
     } catch (error) {
       console.error('Failed to parse import file', error);
-      alert('Arquivo de importacao invalido. Use um JSON gerado na exportacao.');
+      alert('Arquivo de importação inválido. Use um JSON gerado na exportação.');
       return;
     }
 
@@ -205,7 +205,7 @@ export default function SystemSettings() {
       setImportFile(null);
     } catch (error) {
       console.error('Failed to import settings', error);
-      alert('Erro ao importar configuracoes.');
+      alert('Erro ao importar configurações.');
     } finally {
       setImporting(false);
     }
@@ -219,7 +219,7 @@ export default function SystemSettings() {
             <ArrowBackIcon />
           </IconButton>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            Configuracao
+            Configuração
           </Typography>
         </Toolbar>
       </AppBar>
@@ -229,10 +229,10 @@ export default function SystemSettings() {
           <Stack spacing={2}>
             <Box>
               <Typography variant="h5" sx={{ mb: 0.5 }}>
-                Configuracoes de Sistema
+                Configurações de Sistema
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Exporte catalogo, configuracoes de projeto e projetos/versoes ativas para importar em outra instancia.
+                Exporte catálogo, configurações de projeto e projetos/versões ativas para importar em outra instância.
               </Typography>
             </Box>
 
@@ -242,7 +242,7 @@ export default function SystemSettings() {
               onClick={() => setExportDialogOpen(true)}
               sx={{ alignSelf: 'flex-start' }}
             >
-              Exportar todas as configuracoes
+              Exportar todas as configurações
             </Button>
 
             <Button
@@ -251,7 +251,7 @@ export default function SystemSettings() {
               onClick={() => setImportDialogOpen(true)}
               sx={{ alignSelf: 'flex-start' }}
             >
-              Importar configuracoes
+              Importar configurações
             </Button>
 
             <Button
@@ -260,11 +260,11 @@ export default function SystemSettings() {
               onClick={() => navigate('/settings/users')}
               sx={{ alignSelf: 'flex-start' }}
             >
-              Gerenciar usuarios
+              Gerenciar usuários
             </Button>
 
             <Typography variant="caption" color="text.secondary">
-              A exportacao gera um arquivo JSON. A importacao aplica merge sem duplicar os mesmos registros.
+              A exportação gera um arquivo JSON. A importação aplica merge sem duplicar os mesmos registros.
             </Typography>
           </Stack>
         </Paper>
@@ -273,7 +273,7 @@ export default function SystemSettings() {
       <Dialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <SettingsIcon fontSize="small" />
-          Selecionar blocos para exportacao
+          Selecionar blocos para exportação
         </DialogTitle>
         <DialogContent>
           <FormGroup>
@@ -284,7 +284,7 @@ export default function SystemSettings() {
                   onChange={() => toggleExportSelection('includeCatalog')}
                 />
               }
-              label="Catalogo (Locais, Operacoes, Equipamentos, Areas de Computadores e Areas de Balancas)"
+              label="Catálogo (Locais, Operações, Equipamentos, Áreas de Computadores e Áreas de Balanças)"
             />
             <FormControlLabel
               control={
@@ -293,7 +293,7 @@ export default function SystemSettings() {
                   onChange={() => toggleExportSelection('includeProjectHeaderFields')}
                 />
               }
-              label="Configuracoes de Projeto (campos do cabecalho)"
+              label="Configurações de Projeto (campos do cabeçalho)"
             />
             <FormControlLabel
               control={
@@ -302,7 +302,7 @@ export default function SystemSettings() {
                   onChange={() => toggleExportSelection('includeProjectsAndActiveVersions')}
                 />
               }
-              label="Projetos e versoes ativas (nao concluidas)"
+              label="Projetos e versões ativas (não concluídas)"
             />
           </FormGroup>
         </DialogContent>
@@ -319,7 +319,7 @@ export default function SystemSettings() {
       <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <SettingsIcon fontSize="small" />
-          Importar configuracoes
+          Importar configurações
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
@@ -345,7 +345,7 @@ export default function SystemSettings() {
                   onChange={() => toggleImportSelection('includeCatalog')}
                 />
               }
-              label="Catalogo (Locais, Operacoes, Equipamentos, Areas de Computadores e Areas de Balancas)"
+              label="Catálogo (Locais, Operações, Equipamentos, Áreas de Computadores e Áreas de Balanças)"
             />
               <FormControlLabel
                 control={
@@ -354,7 +354,7 @@ export default function SystemSettings() {
                     onChange={() => toggleImportSelection('includeProjectHeaderFields')}
                   />
                 }
-                label="Configuracoes de Projeto (campos do cabecalho)"
+                label="Configurações de Projeto (campos do cabeçalho)"
               />
               <FormControlLabel
                 control={
@@ -363,7 +363,7 @@ export default function SystemSettings() {
                     onChange={() => toggleImportSelection('includeProjectsAndActiveVersions')}
                   />
                 }
-                label="Projetos e versoes ativas (nao concluidas)"
+                label="Projetos e versões ativas (não concluídas)"
               />
             </FormGroup>
           </Stack>

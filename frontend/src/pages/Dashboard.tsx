@@ -92,7 +92,7 @@ export default function Dashboard() {
   const handleDeleteProject = async (project: Project) => {
     if (!isAdmin) return;
     const confirmed = window.confirm(
-      `Excluir o projeto "${project.name}"?\n\nTodas as requisicoes e itens vinculados tambem serao removidos.`,
+      `Excluir o projeto "${project.name}"?\n\nTodas as requisições e itens vinculados também serão removidos.`,
     );
     if (!confirmed) return;
 
@@ -113,7 +113,7 @@ export default function Dashboard() {
       <AppBar position="sticky" elevation={0}>
         <Toolbar sx={{ gap: 1.5, py: 0.5 }}>
           <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 700 }}>
-            SIGP | Gestao de Requisicoes
+            SIGP | Gestão de Requisições
           </Typography>
 
           <Chip size="small" label={user?.role || 'Sem perfil'} color="primary" variant="outlined" />
@@ -148,7 +148,7 @@ export default function Dashboard() {
                 Painel de Projetos
               </Typography>
               <Typography variant="body1" color="text.secondary">
-                Central de operacao para configuracoes tecnicas, catalogo de equipamentos e versoes de requisicao.
+                Central de operação para configurações técnicas, catálogo de equipamentos e versões de requisição.
               </Typography>
             </Box>
 
@@ -157,16 +157,16 @@ export default function Dashboard() {
                 {isAdmin && (
                   <>
                     <Button variant="outlined" startIcon={<InventoryIcon />} onClick={() => navigate('/settings/catalogs')}>
-                      Catalogo
+                      Catálogo
                     </Button>
                     <Button variant="outlined" startIcon={<TuneIcon />} onClick={() => navigate('/settings/project')}>
-                      Configuracoes de Projeto
+                      Configurações de Projeto
                     </Button>
                   </>
                 )}
                 {isAdmin && (
                   <Button variant="outlined" startIcon={<SettingsIcon />} onClick={() => navigate('/settings/system')}>
-                    Configuracao
+                    Configuração
                   </Button>
                 )}
                 {canCreateProject && (
@@ -205,7 +205,7 @@ export default function Dashboard() {
               Nenhum projeto cadastrado
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Crie um projeto para iniciar o fluxo de requisicoes e quantificacao.
+              Crie um projeto para iniciar o fluxo de requisições e quantificação.
             </Typography>
           </Paper>
         ) : (
@@ -250,7 +250,7 @@ export default function Dashboard() {
                     onClick={() => navigate(`/project/${project.id}`)}
                     disabled={deletingProjectId === project.id}
                   >
-                    Abrir requisicoes
+                    Abrir requisições
                   </Button>
                   {isAdmin && (
                     <Button

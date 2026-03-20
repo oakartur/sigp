@@ -101,7 +101,7 @@ export default function ProjectRequisitions() {
       setRequisitions(response.data.requisitions || []);
     } catch (error) {
       console.error('Failed to fetch project details', error);
-      setProjectName('Projeto nao encontrado');
+      setProjectName('Projeto não encontrado');
     } finally {
       setLoading(false);
     }
@@ -118,7 +118,7 @@ export default function ProjectRequisitions() {
       await fetchData();
     } catch (error) {
       console.error('Failed to create requisition', error);
-      alert(parseApiErrorMessage(error, 'Erro ao criar requisicao.'));
+      alert(parseApiErrorMessage(error, 'Erro ao criar requisição.'));
     } finally {
       setActionLoading(false);
     }
@@ -142,7 +142,7 @@ export default function ProjectRequisitions() {
       await fetchData();
     } catch (error) {
       console.error('Failed to create snapshot', error);
-      alert(parseApiErrorMessage(error, 'Erro ao clonar versao.'));
+      alert(parseApiErrorMessage(error, 'Erro ao clonar versão.'));
     } finally {
       setActionLoading(false);
     }
@@ -166,7 +166,7 @@ export default function ProjectRequisitions() {
       await fetchData();
     } catch (error) {
       console.error('Failed to update version', error);
-      alert(parseApiErrorMessage(error, 'Erro ao atualizar versao.'));
+      alert(parseApiErrorMessage(error, 'Erro ao atualizar versão.'));
     } finally {
       setActionLoading(false);
     }
@@ -176,7 +176,7 @@ export default function ProjectRequisitions() {
     if (user?.role !== 'ADMIN') return;
 
     const confirmed = window.confirm(
-      `Excluir a requisicao ${requisition.version}?\n\nTodos os itens e configuracoes dessa versao serao removidos.`,
+      `Excluir a requisição ${requisition.version}?\n\nTodos os itens e configurações dessa versão serão removidos.`,
     );
     if (!confirmed) return;
 
@@ -186,7 +186,7 @@ export default function ProjectRequisitions() {
       await fetchData();
     } catch (error) {
       console.error('Failed to delete requisition', error);
-      alert(parseApiErrorMessage(error, 'Erro ao excluir requisicao.'));
+      alert(parseApiErrorMessage(error, 'Erro ao excluir requisição.'));
     } finally {
       setActionLoading(false);
     }
@@ -221,10 +221,10 @@ export default function ProjectRequisitions() {
           >
             <Box>
               <Typography variant="h5" sx={{ mb: 0.25 }}>
-                Requisicoes e versoes
+                Requisições e versões
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Controle de versao da requisicao para cada etapa do projeto.
+                Controle de versão da requisição para cada etapa do projeto.
               </Typography>
             </Box>
 
@@ -235,14 +235,14 @@ export default function ProjectRequisitions() {
                 onClick={() => setCreateDialogOpen(true)}
                 disabled={actionLoading}
               >
-                Nova requisicao
+                Nova requisição
               </Button>
             )}
           </Stack>
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ mt: 2 }}>
-            <Chip label={`Versoes: ${requisitions.length}`} variant="outlined" color="primary" />
-            <Chip label={`Concluidas: ${completedCount}`} variant="outlined" color="success" />
+            <Chip label={`Versões: ${requisitions.length}`} variant="outlined" color="primary" />
+            <Chip label={`Concluídas: ${completedCount}`} variant="outlined" color="success" />
             <Chip label={`Em preenchimento: ${requisitions.length - completedCount}`} variant="outlined" />
           </Stack>
         </Paper>
@@ -254,10 +254,10 @@ export default function ProjectRequisitions() {
         ) : sortedRequisitions.length === 0 ? (
           <Paper sx={{ p: 5, textAlign: 'center' }}>
             <Typography variant="h6" sx={{ mb: 0.5 }}>
-              Nenhuma requisicao para este projeto
+              Nenhuma requisição para este projeto
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Crie a primeira versao para iniciar o levantamento de material.
+              Crie a primeira versão para iniciar o levantamento de material.
             </Typography>
           </Paper>
         ) : (
@@ -265,11 +265,11 @@ export default function ProjectRequisitions() {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell>Versao</TableCell>
+                  <TableCell>Versão</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Modo</TableCell>
                   <TableCell>Criada em</TableCell>
-                  <TableCell align="right">Acoes</TableCell>
+                  <TableCell align="right">Ações</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -299,7 +299,7 @@ export default function ProjectRequisitions() {
                     <TableCell>
                       <Chip
                         size="small"
-                        label={requisition.isReadOnly ? 'Somente leitura' : 'Editavel'}
+                        label={requisition.isReadOnly ? 'Somente leitura' : 'Editável'}
                         color={requisition.isReadOnly ? 'default' : 'secondary'}
                         variant="outlined"
                       />
@@ -312,14 +312,14 @@ export default function ProjectRequisitions() {
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
                         {isAdminOrQuantifier && (
-                          <Tooltip title="Editar versao">
+                          <Tooltip title="Editar versão">
                             <IconButton size="small" color="primary" onClick={() => openEditVersionDialog(requisition)}>
                               <EditIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
                         )}
                         {user?.role === 'ADMIN' && (
-                          <Tooltip title="Excluir requisicao">
+                          <Tooltip title="Excluir requisição">
                             <span>
                               <IconButton
                                 size="small"
@@ -357,13 +357,13 @@ export default function ProjectRequisitions() {
       </Container>
 
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Nova requisicao</DialogTitle>
+        <DialogTitle>Nova requisição</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
             fullWidth
             margin="dense"
-            label="Versao"
+            label="Versão"
             value={createVersion}
             onChange={(event) => setCreateVersion(event.target.value)}
             sx={{ mt: 1 }}
@@ -380,13 +380,13 @@ export default function ProjectRequisitions() {
       </Dialog>
 
       <Dialog open={cloneDialogOpen} onClose={() => setCloneDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Clonar requisicao</DialogTitle>
+        <DialogTitle>Clonar requisição</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
             fullWidth
             margin="dense"
-            label="Nova versao"
+            label="Nova versão"
             value={cloneVersion}
             onChange={(event) => setCloneVersion(event.target.value)}
             sx={{ mt: 1 }}
@@ -403,13 +403,13 @@ export default function ProjectRequisitions() {
       </Dialog>
 
       <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Editar versao</DialogTitle>
+        <DialogTitle>Editar versão</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
             fullWidth
             margin="dense"
-            label="Versao"
+            label="Versão"
             value={editingVersion}
             onChange={(event) => setEditingVersion(event.target.value)}
             sx={{ mt: 1 }}

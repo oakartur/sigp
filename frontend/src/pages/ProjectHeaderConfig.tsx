@@ -53,7 +53,7 @@ interface HeaderField {
 
 const TYPE_LABEL: Record<HeaderFieldType, string> = {
   TEXT: 'Texto',
-  NUMBER: 'Numero',
+  NUMBER: 'Número',
   SELECT: 'Lista',
   COMPUTED: 'Calculado',
 };
@@ -103,7 +103,7 @@ export default function ProjectHeaderConfig() {
       const backendMessage = apiError.response?.data?.message;
       const errorMessage = Array.isArray(backendMessage)
         ? backendMessage.join(' ')
-        : backendMessage || 'Erro ao carregar configuracoes de projeto.';
+        : backendMessage || 'Erro ao carregar configurações de projeto.';
       showSnackbar(errorMessage, 'error');
     } finally {
       setLoading(false);
@@ -168,7 +168,7 @@ export default function ProjectHeaderConfig() {
 
       if (dialogMode === 'create') {
         await api.post('/project-header-fields', payload);
-        showSnackbar('Campo de configuracao criado.', 'success');
+        showSnackbar('Campo de configuração criado.', 'success');
       } else if (editingField) {
         await api.put(`/project-header-fields/${editingField.id}`, payload);
         showSnackbar('Campo atualizado.', 'success');
@@ -201,7 +201,7 @@ export default function ProjectHeaderConfig() {
     try {
       setDeleting(true);
       await api.delete(`/project-header-fields/${deletingField.id}`);
-      showSnackbar('Campo excluido.', 'success');
+      showSnackbar('Campo excluído.', 'success');
       setDeleteDialogOpen(false);
       setDeletingField(null);
       await fetchFields();
@@ -249,7 +249,7 @@ export default function ProjectHeaderConfig() {
             <ArrowBackIcon />
           </IconButton>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            Configuracoes de Projeto
+            Configurações de Projeto
           </Typography>
           {isAdmin && (
             <Button variant="contained" startIcon={<AddIcon />} onClick={openCreateDialog}>
@@ -266,9 +266,9 @@ export default function ProjectHeaderConfig() {
           </Box>
         ) : fields.length === 0 ? (
           <Paper sx={{ p: 5, textAlign: 'center' }}>
-            <Typography variant="h6">Nenhuma configuracao cadastrada.</Typography>
+            <Typography variant="h6">Nenhuma configuração cadastrada.</Typography>
             <Typography variant="body2" color="text.secondary">
-              Crie campos de projeto para liberar preenchimento nas requisicoes.
+              Crie campos de projeto para liberar preenchimento nas requisições.
             </Typography>
           </Paper>
         ) : (
@@ -279,15 +279,15 @@ export default function ProjectHeaderConfig() {
                   <TableCell sx={{ width: 60 }}>#</TableCell>
                   <TableCell>Campo</TableCell>
                   <TableCell sx={{ width: 140 }}>Tipo</TableCell>
-                  <TableCell sx={{ width: 200 }}>Padrao / Opcoes</TableCell>
-                  <TableCell>Formula</TableCell>
+                  <TableCell sx={{ width: 200 }}>Padrão / Opções</TableCell>
+                  <TableCell>Fórmula</TableCell>
                   {isAdmin && (
                     <>
                       <TableCell align="center" sx={{ width: 110 }}>
                         Ordem
                       </TableCell>
                       <TableCell align="right" sx={{ width: 130 }}>
-                        Acoes
+                        Ações
                       </TableCell>
                     </>
                   )}
@@ -387,39 +387,39 @@ export default function ProjectHeaderConfig() {
               fullWidth
             >
               <MenuItem value="TEXT">Texto</MenuItem>
-              <MenuItem value="NUMBER">Numero</MenuItem>
+              <MenuItem value="NUMBER">Número</MenuItem>
               <MenuItem value="SELECT">Lista dropdown</MenuItem>
-              <MenuItem value="COMPUTED">Calculado por formula</MenuItem>
+              <MenuItem value="COMPUTED">Calculado por fórmula</MenuItem>
             </TextField>
 
             {fieldType === 'SELECT' && (
               <TextField
-                label="Opcoes da lista"
+                label="Opções da lista"
                 multiline
                 minRows={4}
                 fullWidth
                 value={fieldOptionsText}
                 onChange={(event) => setFieldOptionsText(event.target.value)}
-                helperText="Uma opcao por linha (ou separadas por virgula)."
+                helperText="Uma opção por linha (ou separadas por vírgula)."
                 sx={{ gridColumn: { xs: '1 / -1', md: '1 / 2' } }}
               />
             )}
 
             {fieldType !== 'COMPUTED' && (
               <TextField
-                label="Valor padrao"
+                label="Valor padrão"
                 type={fieldType === 'NUMBER' ? 'number' : 'text'}
                 value={defaultValue}
                 onChange={(event) => setDefaultValue(event.target.value)}
                 fullWidth
-                helperText={fieldType === 'SELECT' ? 'Para lista, deve ser uma opcao valida.' : ''}
+                helperText={fieldType === 'SELECT' ? 'Para lista, deve ser uma opção válida.' : ''}
                 sx={{ gridColumn: fieldType === 'SELECT' ? { xs: '1 / -1', md: '2 / 3' } : undefined }}
               />
             )}
 
             {fieldType === 'COMPUTED' && (
               <TextField
-                label="Formula"
+                label="Fórmula"
                 multiline
                 minRows={4}
                 fullWidth
@@ -454,7 +454,7 @@ export default function ProjectHeaderConfig() {
         <DialogTitle>Excluir Campo</DialogTitle>
         <DialogContent>
           <Typography>
-            Confirmar exclusao do campo <strong>{deletingField?.label}</strong>?
+            Confirmar exclusão do campo <strong>{deletingField?.label}</strong>?
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 1 }}>

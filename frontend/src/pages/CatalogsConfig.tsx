@@ -164,7 +164,7 @@ export default function CatalogsConfig() {
       const backendMessage = apiError.response?.data?.message;
       const errorMessage = Array.isArray(backendMessage)
         ? backendMessage.join(' ')
-        : backendMessage || 'Formula invalida.';
+        : backendMessage || 'Fórmula inválida.';
       setFormulaValidation({
         isValid: false,
         normalizedExpression: normalized,
@@ -188,7 +188,7 @@ export default function CatalogsConfig() {
       setHeaderFields(fieldsRes.data || []);
     } catch (err) {
       console.error('Failed to fetch catalogs', err);
-      alert('Erro ao carregar catalogos');
+      alert('Erro ao carregar catálogos');
     } finally {
       setLoading(false);
     }
@@ -289,7 +289,7 @@ export default function CatalogsConfig() {
       await fetchData();
     } catch (err) {
       console.error('Failed to save operation', err);
-      alert('Erro ao salvar operacao');
+      alert('Erro ao salvar operação');
     } finally {
       setSaving(false);
     }
@@ -333,19 +333,19 @@ export default function CatalogsConfig() {
   };
 
   const removeLocal = async (id: string) => {
-    if (!window.confirm('Remover este local e todas as operacoes/equipamentos?')) return;
+    if (!window.confirm('Remover este local e todas as operações/equipamentos?')) return;
     await api.delete(`/catalog/locals/${id}`);
     await fetchData();
   };
 
   const removeOperation = async (id: string) => {
-    if (!window.confirm('Remover esta operacao e seus equipamentos?')) return;
+    if (!window.confirm('Remover esta operação e seus equipamentos?')) return;
     await api.delete(`/catalog/operations/${id}`);
     await fetchData();
   };
 
   const removeEquipment = async (id: string) => {
-    if (!window.confirm('Remover este equipamento do catalogo?')) return;
+    if (!window.confirm('Remover este equipamento do catálogo?')) return;
     await api.delete(`/catalog/equipments/${id}`);
     await fetchData();
   };
@@ -371,13 +371,13 @@ export default function CatalogsConfig() {
       const message = [
         `Linhas processadas: ${data.rowsProcessed ?? 0}`,
         `Locais criados: ${data.localsCreated ?? 0}`,
-        `Operacoes criadas: ${data.operationsCreated ?? 0}`,
+        `Operações criadas: ${data.operationsCreated ?? 0}`,
         `Equipamentos criados: ${data.equipmentsCreated ?? 0}`,
         `Equipamentos atualizados: ${data.equipmentsUpdated ?? 0}`,
         `Duplicados ignorados: ${data.duplicatesSkipped ?? 0}`,
         `Linhas ignoradas: ${data.rowsSkipped ?? 0}`,
       ].join('\n');
-      alert(`Importacao concluida.\n\n${message}`);
+      alert(`Importação concluída.\n\n${message}`);
 
       if (Array.isArray(data.errors) && data.errors.length > 0) {
         console.warn('Import warnings:', data.errors);
@@ -390,7 +390,7 @@ export default function CatalogsConfig() {
       const backendMessage = apiError.response?.data?.message;
       const errorMessage = Array.isArray(backendMessage)
         ? backendMessage.join(' ')
-        : backendMessage || 'Erro ao importar catalogo. Verifique o formato do arquivo.';
+        : backendMessage || 'Erro ao importar catálogo. Verifique o formato do arquivo.';
       alert(errorMessage);
     } finally {
       setImporting(false);
@@ -400,7 +400,7 @@ export default function CatalogsConfig() {
 
   const handleClearCatalog = async () => {
     const confirmed = window.confirm(
-      'Limpar todo o catalogo?\n\nTodos os Locais, Operacoes e Equipamentos de template serao removidos.',
+      'Limpar todo o catálogo?\n\nTodos os Locais, Operações e Equipamentos de template serão removidos.',
     );
     if (!confirmed) return;
 
@@ -410,10 +410,10 @@ export default function CatalogsConfig() {
       setFilterLocalId('');
       setFilterOperationId('');
       await fetchData();
-      alert('Catalogo limpo com sucesso.');
+      alert('Catálogo limpo com sucesso.');
     } catch (err) {
       console.error('Failed to clear catalog', err);
-      alert('Erro ao limpar catalogo.');
+      alert('Erro ao limpar catálogo.');
     } finally {
       setClearingCatalog(false);
     }
@@ -431,7 +431,7 @@ export default function CatalogsConfig() {
             <ArrowBackIcon />
           </IconButton>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold', color: 'primary.main' }}>
-            Catalogo de Local, Operacao e Equipamentos
+            Catálogo de Local, Operação e Equipamentos
           </Typography>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <input
@@ -450,7 +450,7 @@ export default function CatalogsConfig() {
               startIcon={<ComputerIcon />}
               onClick={() => navigate('/settings/catalogs/computer-areas')}
             >
-              Areas de computadores
+              Áreas de computadores
             </Button>
             <Button
               variant="outlined"
@@ -458,10 +458,10 @@ export default function CatalogsConfig() {
               startIcon={<ScaleIcon />}
               onClick={() => navigate('/settings/catalogs/backoffice-scales')}
             >
-              Balancas retaguarda
+              Balanças retaguarda
             </Button>
             <Button variant="outlined" color="error" onClick={handleClearCatalog} disabled={clearingCatalog || loading}>
-              {clearingCatalog ? 'Limpando...' : 'Limpar catalogo'}
+              {clearingCatalog ? 'Limpando...' : 'Limpar catálogo'}
             </Button>
             <Button variant="contained" startIcon={<AddIcon />} onClick={() => setLocalDialog({ open: true, name: '' })}>
               Novo Local
@@ -514,7 +514,7 @@ export default function CatalogsConfig() {
               Limpar filtros
             </Button>
 
-            <Chip color="primary" variant="outlined" label={`Itens no catalogo: ${totalCatalogItems}`} />
+            <Chip color="primary" variant="outlined" label={`Itens no catálogo: ${totalCatalogItems}`} />
             {(filterLocalId || filterOperationId) && (
               <Chip color="secondary" variant="outlined" label={`Itens exibidos: ${filteredCatalogItems}`} />
             )}
@@ -546,7 +546,7 @@ export default function CatalogsConfig() {
                       startIcon={<AddIcon />}
                       onClick={() => setOperationDialog({ open: true, localId: local.id, name: '' })}
                     >
-                      Nova Operacao
+                      Nova Operação
                     </Button>
                     <IconButton
                       color="primary"
@@ -563,7 +563,7 @@ export default function CatalogsConfig() {
 
                 {local.operations.length === 0 ? (
                   <Typography variant="body2" color="text.secondary">
-                    Nenhuma operacao cadastrada neste local.
+                    Nenhuma operação cadastrada neste local.
                   </Typography>
                 ) : (
                   local.operations.map((operation) => (
@@ -614,13 +614,13 @@ export default function CatalogsConfig() {
                       <Table size="small">
                         <TableHead>
                           <TableRow>
-                            <TableCell>Codigo</TableCell>
-                            <TableCell>Descricao</TableCell>
+                            <TableCell>Código</TableCell>
+                            <TableCell>Descrição</TableCell>
                             <TableCell align="right">Qtd Base</TableCell>
                             <TableCell>Auto por Campo Config.</TableCell>
                             <TableCell align="right">Multiplicador</TableCell>
-                            <TableCell>Formula Auto</TableCell>
-                            <TableCell align="right">Acoes</TableCell>
+                            <TableCell>Fórmula Auto</TableCell>
+                            <TableCell align="right">Ações</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
@@ -628,7 +628,7 @@ export default function CatalogsConfig() {
                             <TableRow>
                               <TableCell colSpan={7}>
                                 <Typography variant="body2" color="text.secondary">
-                                  Nenhum equipamento nesta operacao.
+                                  Nenhum equipamento nesta operação.
                                 </Typography>
                               </TableCell>
                             </TableRow>
@@ -711,13 +711,13 @@ export default function CatalogsConfig() {
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>{operationDialog.id ? 'Editar Operacao' : 'Nova Operacao'}</DialogTitle>
+        <DialogTitle>{operationDialog.id ? 'Editar Operação' : 'Nova Operação'}</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
             fullWidth
             margin="dense"
-            label="Nome da Operacao"
+            label="Nome da Operação"
             value={operationDialog.name}
             onChange={(e) => setOperationDialog((prev) => ({ ...prev, name: e.target.value }))}
             sx={{ mt: 1 }}
@@ -755,13 +755,13 @@ export default function CatalogsConfig() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1 }}>
             <TextField
               autoFocus
-              label="Codigo Nimbi (opcional)"
+              label="Código Nimbi (opcional)"
               value={equipmentDialog.code}
               onChange={(e) => setEquipmentDialog((prev) => ({ ...prev, code: e.target.value }))}
               fullWidth
             />
             <TextField
-              label="Descricao"
+              label="Descrição"
               value={equipmentDialog.description}
               onChange={(e) => setEquipmentDialog((prev) => ({ ...prev, description: e.target.value }))}
               fullWidth
@@ -795,7 +795,7 @@ export default function CatalogsConfig() {
               fullWidth
             />
             <TextField
-              label="Formula de Auto Preenchimento (opcional)"
+              label="Fórmula de Auto Preenchimento (opcional)"
               value={equipmentDialog.autoFormulaExpression}
               onChange={(e) => setEquipmentDialog((prev) => ({ ...prev, autoFormulaExpression: e.target.value }))}
               fullWidth
